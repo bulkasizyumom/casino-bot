@@ -8,10 +8,10 @@ from aiogram.utils import executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.types import ContentType
 
-from messages import MessagesHandler
-from rating import RatingHandler
-from users import Users
-from database import Database
+from handlers.messages import MessagesHandler
+from handlers.rating import RatingHandler
+from libraries.users import Users
+from database.database import Database
 
 # variables
 
@@ -274,3 +274,4 @@ if __name__ == '__main__':
 
 
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
+
