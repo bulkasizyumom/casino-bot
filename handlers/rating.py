@@ -8,11 +8,6 @@ class RatingHandler:
     
     def register(self, dp: Dispatcher, bot: Bot, database: Users):
         def build_rating(chat_id: int, key: str, time_filter: str = None):
-            if time_filter:
-                users_data = database.get_time_filtered('tries', chat_id, time_filter)
-            else:
-                users_data = database.get_all('tries', chat_id)
-            
             ranking = []
             user_names = {}
 
@@ -21,11 +16,32 @@ class RatingHandler:
             for user in all_users:
                 user_names[user['id']] = user.get('name', 'Unknown')
 
+            if time_filter:
+                # Для временных фильтров используем соответствующие таблицы
+                if key == 'wins':
+                    users_data = database.get_time_filtered('wins', chat_id, time_filter)
+                elif key == 'tries':
+                    users_data = database.get_time_filtered('tries', chat_id, time_filter)
+                elif key == 'jackpots':
+                    users_data = database.get_time_filtered('jackpots', chat_id, time_filter)
+                else:  # winrate
+                    users_data = database.get_time_filtered('tries', chat_id, time_filter)
+            else:
+                # Для общей статистики
+                if key == 'wins':
+                    users_data = database.get_all('wins', chat_id)
+                elif key == 'tries':
+                    users_data = database.get_all('tries', chat_id)
+                elif key == 'jackpots':
+                    users_data = database.get_all('jackpots', chat_id)
+                else:  # winrate
+                    users_data = database.get_all('tries', chat_id)
+
             for user_data in users_data:
                 user_id = user_data['id']
                 
                 if time_filter:
-                    # Для временных фильтров используем данные из tries/wins/jackpots
+                    # Для временных фильтров
                     if key == 'winrate':
                         wins_data = database.get_time_filtered('wins', chat_id, time_filter)
                         user_wins = sum([sum([val for k, val in win.items() if k not in ['id', 'chat_id', 'timestamp']]) 
@@ -34,28 +50,29 @@ class RatingHandler:
                                         for try_item in users_data if try_item['id'] == user_id])
                         value = user_wins / user_tries if user_tries > 0 else 0
                     elif key == 'jackpots':
-                        jackpots_data = database.get_time_filtered('jackpots', chat_id, time_filter)
-                        value = sum([jackpot.get('slots', 0) for jackpot in jackpots_data if jackpot['id'] == user_id])
-                    elif key == 'wins':  # ИСПРАВЛЕНИЕ: отдельная обработка для выигрышей
-                        wins_data = database.get_time_filtered('wins', chat_id, time_filter)
-                        value = sum([sum([val for k, val in win.items() if k not in ['id', 'chat_id', 'timestamp']]) 
-                                   for win in wins_data if win['id'] == user_id])
-                    else:
-                        value = sum([val for k, val in user_data.items() if k not in ['id', 'chat_id', 'timestamp']])
+                        value = user_data.get('slots', 0)
+                    elif key == 'wins':
+                        # Суммируем все выигрыши из таблицы wins
+                        value = sum([val for k, val in user_data.items() 
+                                   if k not in ['id', 'chat_id', 'timestamp'] and val is not None])
+                    else:  # tries
+                        value = sum([val for k, val in user_data.items() 
+                                   if k not in ['id', 'chat_id', 'timestamp'] and val is not None])
                 else:
                     # Для общей статистики
                     if key == 'winrate':
                         wins = database.get('wins', user_id, chat_id) or {}
                         tries = database.get('tries', user_id, chat_id) or {}
-                        wins_sum = sum([val for k, val in wins.items() if k not in ['id', 'chat_id', 'timestamp']])
-                        tries_sum = sum([val for k, val in tries.items() if k not in ['id', 'chat_id', 'timestamp']])
+                        wins_sum = sum([val for k, val in wins.items() if k not in ['id', 'chat_id', 'timestamp'] and val is not None])
+                        tries_sum = sum([val for k, val in tries.items() if k not in ['id', 'chat_id', 'timestamp'] and val is not None])
                         value = wins_sum / tries_sum if tries_sum > 0 else 0
                     elif key == 'jackpots':
                         jackpots = database.get('jackpots', user_id, chat_id) or {}
                         value = jackpots.get('slots', 0)
                     else:
                         table_data = database.get(key, user_id, chat_id) or {}
-                        value = sum([val for k, val in table_data.items() if k not in ['id', 'chat_id', 'timestamp']])
+                        value = sum([val for k, val in table_data.items() 
+                                   if k not in ['id', 'chat_id', 'timestamp'] and val is not None])
 
                 if value > 0:  # Показываем только тех, у кого есть статистика
                     ranking.append(({'id': user_id, 'name': user_names.get(user_id, 'Unknown')}, value))
@@ -80,8 +97,8 @@ class RatingHandler:
                 InlineKeyboardButton('🎰 Винрейт', callback_data='rating-winrate-all')
             )
             keyboard.row(
-                InlineKeyboardButton('📅 За сутки', callback_data='rating-time-day'),
-                InlineKeyboardButton('📅 За неделю', callback_data='rating-time-week')
+                InlineKeyboardButton('📅 За сутки', callback_data='rating-wins-day'),
+                InlineKeyboardButton('📅 За неделю', callback_data='rating-wins-week')
             )
 
             await bot.send_message(
@@ -139,8 +156,8 @@ class RatingHandler:
                 InlineKeyboardButton('🎰 Винрейт', callback_data='rating-winrate-all')
             )
             keyboard.row(
-                InlineKeyboardButton('📅 За сутки', callback_data='rating-time-day'),
-                InlineKeyboardButton('📅 За неделю', callback_data='rating-time-week')
+                InlineKeyboardButton('📅 За сутки', callback_data='rating-wins-day'),
+                InlineKeyboardButton('📅 За неделю', callback_data='rating-wins-week')
             )
 
             await callback.message.edit_text(
