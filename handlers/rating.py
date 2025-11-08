@@ -7,7 +7,202 @@ class RatingHandler:
         self.register(dp, bot, database)
     
     def register(self, dp: Dispatcher, bot: Bot, database: Users):
-        def build_rating(chat_id: int, key: str, time_filter: str = None):
+        # Главное меню рейтингов
+        @dp.callback_query_handler(lambda c: c.data == 'rating_main')
+        async def rating_main(callback: types.CallbackQuery):
+            keyboard = InlineKeyboardMarkup(row_width=2)
+            keyboard.add(
+                InlineKeyboardButton('🎰 Слоты', callback_data='rating_game-slots'),
+                InlineKeyboardButton('🎲 Кубик', callback_data='rating_game-dice')
+            )
+            keyboard.add(
+                InlineKeyboardButton('⚽ Футбол', callback_data='rating_game-foot'),
+                InlineKeyboardButton('🎳 Боулинг', callback_data='rating_game-bowl')
+            )
+            keyboard.add(
+                InlineKeyboardButton('🏀 Баскетбол', callback_data='rating_game-bask'),
+                InlineKeyboardButton('🎯 Дартс', callback_data='rating_game-dart')
+            )
+            keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='back-to-main'))
+
+            await callback.message.edit_text(
+                "🏆 <b>Рейтинги</b>\n\nВыберите игру:",
+                reply_markup=keyboard
+            )
+            await callback.answer()
+
+        # Выбор игры
+        @dp.callback_query_handler(lambda c: c.data.startswith('rating_game-'))
+        async def rating_select_game(callback: types.CallbackQuery):
+            game = callback.data.split('-')[1]
+            
+            game_emojis = {
+                'slots': '🎰',
+                'dice': '🎲', 
+                'foot': '⚽',
+                'bowl': '🎳',
+                'bask': '🏀',
+                'dart': '🎯'
+            }
+            
+            game_names = {
+                'slots': 'Слоты',
+                'dice': 'Кубик',
+                'foot': 'Футбол', 
+                'bowl': 'Боулинг',
+                'bask': 'Баскетбол',
+                'dart': 'Дартс'
+            }
+            
+            emoji = game_emojis.get(game, '🎰')
+            name = game_names.get(game, 'Слоты')
+
+            keyboard = InlineKeyboardMarkup()
+            keyboard.add(
+                InlineKeyboardButton('📅 За сутки', callback_data=f'rating_period-{game}-day'),
+                InlineKeyboardButton('📅 За неделю', callback_data=f'rating_period-{game}-week')
+            )
+            keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='rating_main'))
+
+            await callback.message.edit_text(
+                f"{emoji} <b>Рейтинги {name}</b>\n\nВыберите период:",
+                reply_markup=keyboard
+            )
+            await callback.answer()
+
+        # Выбор периода
+        @dp.callback_query_handler(lambda c: c.data.startswith('rating_period-'))
+        async def rating_select_period(callback: types.CallbackQuery):
+            data_parts = callback.data.split('-')
+            game = data_parts[1]
+            period = data_parts[2]
+            
+            game_emojis = {
+                'slots': '🎰',
+                'dice': '🎲',
+                'foot': '⚽',
+                'bowl': '🎳', 
+                'bask': '🏀',
+                'dart': '🎯'
+            }
+            
+            game_names = {
+                'slots': 'Слоты',
+                'dice': 'Кубик',
+                'foot': 'Футбол',
+                'bowl': 'Боулинг',
+                'bask': 'Баскетбол', 
+                'dart': 'Дартс'
+            }
+            
+            period_names = {
+                'day': 'сутки',
+                'week': 'неделю'
+            }
+            
+            emoji = game_emojis.get(game, '🎰')
+            name = game_names.get(game, 'Слоты')
+            period_name = period_names.get(period, 'сутки')
+
+            keyboard = InlineKeyboardMarkup()
+            
+            # Для всех игр показываем стандартные кнопки
+            keyboard.add(
+                InlineKeyboardButton('✅ Выигрыши', callback_data=f'rating_criteria-{game}-{period}-wins'),
+                InlineKeyboardButton('🎯 Попытки', callback_data=f'rating_criteria-{game}-{period}-tries')
+            )
+            keyboard.add(InlineKeyboardButton('📊 Винрейт', callback_data=f'rating_criteria-{game}-{period}-winrate'))
+            
+            # Только для слотов добавляем джекпоты
+            if game == 'slots':
+                keyboard.add(InlineKeyboardButton('⭐ Джекпоты', callback_data=f'rating_criteria-{game}-{period}-jackpots'))
+            
+            keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data=f'rating_game-{game}'))
+
+            await callback.message.edit_text(
+                f"{emoji} <b>Рейтинги {name}</b>\n📅 <b>Период:</b> за {period_name}\n\nВыберите критерий:",
+                reply_markup=keyboard
+            )
+            await callback.answer()
+
+        # Отображение рейтинга
+        @dp.callback_query_handler(lambda c: c.data.startswith('rating_criteria-'))
+        async def rating_show(callback: types.CallbackQuery):
+            data_parts = callback.data.split('-')
+            game = data_parts[1]
+            period = data_parts[2]
+            criteria = data_parts[3]
+            
+            game_emojis = {
+                'slots': '🎰',
+                'dice': '🎲',
+                'foot': '⚽',
+                'bowl': '🎳',
+                'bask': '🏀',
+                'dart': '🎯'
+            }
+            
+            game_names = {
+                'slots': 'Слоты',
+                'dice': 'Кубик', 
+                'foot': 'Футбол',
+                'bowl': 'Боулинг',
+                'bask': 'Баскетбол',
+                'dart': 'Дартс'
+            }
+            
+            period_names = {
+                'day': 'сутки',
+                'week': 'неделю'
+            }
+            
+            criteria_names = {
+                'wins': 'Выигрыши',
+                'tries': 'Попытки',
+                'winrate': 'Винрейт',
+                'jackpots': 'Джекпоты'
+            }
+            
+            emoji = game_emojis.get(game, '🎰')
+            game_name = game_names.get(game, 'Слоты')
+            period_name = period_names.get(period, 'сутки')
+            criteria_name = criteria_names.get(criteria, 'Выигрыши')
+
+            # Получаем рейтинг
+            rating_data = build_rating(callback.message.chat.id, game, criteria, period)
+            user_place = find_user_place(callback.from_user.id, rating_data)
+
+            # Формируем текст рейтинга
+            if not rating_data:
+                rating_text = "📊 <i>Пока нет статистики для этого периода</i>"
+            else:
+                rating_lines = []
+                for i, (user_data, value) in enumerate(rating_data[:10]):  # Топ-10
+                    if criteria == 'winrate':
+                        value_text = f"{value:.1%}"
+                    else:
+                        value_text = str(int(value))
+                    
+                    rating_lines.append(f"<b>{i+1}.</b> {user_data['name']} - {value_text}")
+                
+                rating_text = '\n'.join(rating_lines)
+
+            title = f"{emoji} <b>РЕЙТИНГ {game_name.upper()}</b>"
+            period_info = f"📅 <b>Период:</b> за {period_name}"
+            criteria_info = f"📊 <b>Критерий:</b> {criteria_name}"
+            user_info = f"👤 <b>Ваше место:</b> {user_place}"
+
+            text = f"{title}\n{period_info}\n{criteria_info}\n{user_info}\n\n{rating_text}"
+
+            # Клавиатура для возврата
+            keyboard = InlineKeyboardMarkup()
+            keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data=f'rating_period-{game}-{period}'))
+
+            await callback.message.edit_text(text, reply_markup=keyboard)
+            await callback.answer()
+
+        def build_rating(chat_id: int, game: str, criteria: str, time_filter: str = None):
+            """Строит рейтинг для конкретной игры и критерия"""
             ranking = []
             user_names = {}
 
@@ -17,22 +212,22 @@ class RatingHandler:
                 user_names[user['id']] = user.get('name', 'Unknown')
 
             if time_filter:
-                # Для временных фильтров используем соответствующие таблицы
-                if key == 'wins':
+                # Для временных фильтров
+                if criteria == 'wins':
                     users_data = database.get_time_filtered('wins', chat_id, time_filter)
-                elif key == 'tries':
+                elif criteria == 'tries':
                     users_data = database.get_time_filtered('tries', chat_id, time_filter)
-                elif key == 'jackpots':
+                elif criteria == 'jackpots':
                     users_data = database.get_time_filtered('jackpots', chat_id, time_filter)
                 else:  # winrate
                     users_data = database.get_time_filtered('tries', chat_id, time_filter)
             else:
-                # Для общей статистики
-                if key == 'wins':
+                # Для общей статистики (если понадобится)
+                if criteria == 'wins':
                     users_data = database.get_all('wins', chat_id)
-                elif key == 'tries':
+                elif criteria == 'tries':
                     users_data = database.get_all('tries', chat_id)
-                elif key == 'jackpots':
+                elif criteria == 'jackpots':
                     users_data = database.get_all('jackpots', chat_id)
                 else:  # winrate
                     users_data = database.get_all('tries', chat_id)
@@ -40,128 +235,37 @@ class RatingHandler:
             for user_data in users_data:
                 user_id = user_data['id']
                 
-                if time_filter:
-                    # Для временных фильтров
-                    if key == 'winrate':
+                # Получаем значение для конкретной игры
+                if criteria == 'winrate':
+                    # Для винрейта нужны и победы и попытки
+                    if time_filter:
                         wins_data = database.get_time_filtered('wins', chat_id, time_filter)
-                        user_wins = sum([sum([val for k, val in win.items() if k not in ['id', 'chat_id', 'timestamp']]) 
-                                       for win in wins_data if win['id'] == user_id])
-                        user_tries = sum([sum([val for k, val in try_item.items() if k not in ['id', 'chat_id', 'timestamp']]) 
-                                        for try_item in users_data if try_item['id'] == user_id])
-                        value = user_wins / user_tries if user_tries > 0 else 0
-                    elif key == 'jackpots':
-                        value = user_data.get('slots', 0)
-                    elif key == 'wins':
-                        # Суммируем все выигрыши из таблицы wins
-                        value = sum([val for k, val in user_data.items() 
-                                   if k not in ['id', 'chat_id', 'timestamp'] and val is not None])
-                    else:  # tries
-                        value = sum([val for k, val in user_data.items() 
-                                   if k not in ['id', 'chat_id', 'timestamp'] and val is not None])
-                else:
-                    # Для общей статистики
-                    if key == 'winrate':
-                        wins = database.get('wins', user_id, chat_id) or {}
-                        tries = database.get('tries', user_id, chat_id) or {}
-                        wins_sum = sum([val for k, val in wins.items() if k not in ['id', 'chat_id', 'timestamp'] and val is not None])
-                        tries_sum = sum([val for k, val in tries.items() if k not in ['id', 'chat_id', 'timestamp'] and val is not None])
-                        value = wins_sum / tries_sum if tries_sum > 0 else 0
-                    elif key == 'jackpots':
-                        jackpots = database.get('jackpots', user_id, chat_id) or {}
-                        value = jackpots.get('slots', 0)
+                        user_wins_data = next((w for w in wins_data if w['id'] == user_id), {})
+                        user_tries_data = next((t for t in users_data if t['id'] == user_id), {})
                     else:
-                        table_data = database.get(key, user_id, chat_id) or {}
-                        value = sum([val for k, val in table_data.items() 
-                                   if k not in ['id', 'chat_id', 'timestamp'] and val is not None])
+                        user_wins_data = database.get('wins', user_id, chat_id) or {}
+                        user_tries_data = database.get('tries', user_id, chat_id) or {}
+                    
+                    wins = user_wins_data.get(game, 0)
+                    tries = user_tries_data.get(game, 0)
+                    value = wins / tries if tries > 0 else 0
+                    
+                elif criteria == 'jackpots':
+                    # Джекпоты только для слотов
+                    value = user_data.get('slots', 0) if game == 'slots' else 0
+                    
+                else:
+                    # Выигрыши или попытки для конкретной игры
+                    value = user_data.get(game, 0)
 
                 if value > 0:  # Показываем только тех, у кого есть статистика
                     ranking.append(({'id': user_id, 'name': user_names.get(user_id, 'Unknown')}, value))
 
-            return sorted(ranking, key=lambda x: x[1], reverse=True)[:10]
+            return sorted(ranking, key=lambda x: x[1], reverse=True)
 
         def find_user_place(user_id: int, ranking: list):
+            """Находит место пользователя в рейтинге"""
             for index, (user, _) in enumerate(ranking, start=1):
                 if user['id'] == user_id:
                     return index
             return '–'
-
-        @dp.callback_query_handler(lambda c: c.data == 'rating')
-        async def rating_handler(callback: types.CallbackQuery):
-            keyboard = InlineKeyboardMarkup()
-            keyboard.row(
-                InlineKeyboardButton('🎰 Выигрыши', callback_data='rating-wins-all'),
-                InlineKeyboardButton('🎰 Попытки', callback_data='rating-tries-all')
-            )
-            keyboard.row(
-                InlineKeyboardButton('🎰 Джекпоты', callback_data='rating-jackpots-all'),
-                InlineKeyboardButton('🎰 Винрейт', callback_data='rating-winrate-all')
-            )
-            keyboard.row(
-                InlineKeyboardButton('📅 За сутки', callback_data='rating-wins-day'),
-                InlineKeyboardButton('📅 За неделю', callback_data='rating-wins-week')
-            )
-
-            await bot.send_message(
-                callback.message.chat.id,
-                "<b>Выберите категорию и период рейтинга:</b>",
-                reply_markup=keyboard,
-                message_thread_id=callback.message.message_thread_id
-            )
-            await callback.answer()
-
-        @dp.callback_query_handler(lambda c: c.data.startswith('rating-'))
-        async def rating_callback(callback: types.CallbackQuery):
-            parts = callback.data.split('-')
-            key = parts[1] if len(parts) > 1 else 'wins'
-            time_filter = parts[2] if len(parts) > 2 else None
-
-            time_titles = {
-                'all': "🎰 <b>РЕЙТИНГ</b>",
-                'day': "📅 <b>РЕЙТИНГ ЗА СУТКИ</b>",
-                'week': "📅 <b>РЕЙТИНГ ЗА НЕДЕЛЮ</b>"
-            }
-
-            keys = {
-                'wins': "ВЫИГРЫШИ",
-                'tries': "ПОПЫТКИ", 
-                'jackpots': "ДЖЕКПОТЫ",
-                'winrate': "ВИНРЕЙТ"
-            }
-
-            title = f"{time_titles.get(time_filter, '🎰 <b>РЕЙТИНГ</b>')} ПО {keys.get(key, 'ВЫИГРЫШАМ')}"
-
-            rating = build_rating(callback.message.chat.id, key, time_filter)
-            place = find_user_place(callback.from_user.id, rating)
-            
-            if not rating:
-                text = "📊 <i>Пока нет статистики для этого периода</i>"
-            else:
-                text = '\n'.join(
-                    f"<b>{i+1}.</b> {user.get('name')} - {round(val, 2) if key == 'winrate' else int(val)}"
-                    for i, (user, val) in enumerate(rating)
-                )
-
-            result = [
-                f"{title}\n<i>Ваше место: {place}</i>\n\n{text}\n",
-                "<b>Вернуться в главное меню - /casino</b>"
-            ]
-
-            keyboard = InlineKeyboardMarkup()
-            keyboard.row(
-                InlineKeyboardButton('🎰 Выигрыши', callback_data='rating-wins-all'),
-                InlineKeyboardButton('🎰 Попытки', callback_data='rating-tries-all')
-            )
-            keyboard.row(
-                InlineKeyboardButton('🎰 Джекпоты', callback_data='rating-jackpots-all'),
-                InlineKeyboardButton('🎰 Винрейт', callback_data='rating-winrate-all')
-            )
-            keyboard.row(
-                InlineKeyboardButton('📅 За сутки', callback_data='rating-wins-day'),
-                InlineKeyboardButton('📅 За неделю', callback_data='rating-wins-week')
-            )
-
-            await callback.message.edit_text(
-                '\n'.join(result),
-                reply_markup=keyboard,
-            )
-            await callback.answer()
