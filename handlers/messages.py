@@ -12,11 +12,10 @@ class MessagesHandler:
     
     def register(self, dp, bot, games: dict, database: Users):
         async def process_dice(message: types.Message, emoji: str, value: int, user: int):
-            
             # Проверяем, что сообщение не переслано
             if message.forward_date:
                 return  # Игнорируем пересланные сообщения
-                
+
             game = games[emoji]
             game_name = game['name']
             chat_id = message.chat.id
@@ -31,22 +30,29 @@ class MessagesHandler:
                     message_thread_id=message.message_thread_id
                 )
 
+            is_win = False
+            
+            # Проверяем джекпот (только для слотов)
             if emoji == '🎰' and value == game.get('jackpot'):
                 database.increment('jackpots', user, chat_id, 'slots')
-                if database.get('users', user).get('congratulate'):
-                    await congratulate()
-
-            if value in game['win']:
+                database.increment('wins', user, chat_id, 'slots')  # Учитываем джекпот как выигрыш
+                is_win = True
+                
+            # Проверяем обычные выигрыши
+            elif value in game['win']:
                 database.increment('wins', user, chat_id, game_name)
-                if database.get('users', user).get('congratulate'):
-                    await congratulate()
+                is_win = True
+
+            # Поздравляем если это был выигрыш и включены уведомления
+            if is_win and database.get('users', user).get('congratulate'):
+                await congratulate()
 
         @dp.message_handler(content_types=ContentType.DICE)
         async def handle_dice(message: types.Message):
-             # Проверяем, что сообщение не переслано
+            # Проверяем, что сообщение не переслано
             if message.forward_date:
                 return  # Игнорируем пересланные dice
-                
+
             if message.dice and message.dice.emoji in games:
                 await process_dice(message, message.dice.emoji, message.dice.value, message.from_user.id)
             else:
@@ -54,10 +60,10 @@ class MessagesHandler:
 
         @dp.message_handler(commands=['dice', 'slots', 'bask', 'dart', 'foot', 'bowl'])
         async def roll_dice(message: types.Message):
-             # Проверяем, что команда не из пересланного сообщения
+            # Проверяем, что команда не из пересланного сообщения
             if message.forward_date:
                 return  # Игнорируем команды из пересланных сообщений
-                
+
             command = message.text.lstrip('/')
             emoji = next((k for k, v in games.items() if v['name'] == command), None)
 
@@ -66,5 +72,4 @@ class MessagesHandler:
                 return
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
-
             await process_dice(dice_message, emoji, dice_message.dice.value, message.from_user.id)
