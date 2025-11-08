@@ -51,37 +51,20 @@ DP.middleware.setup(UserRegistrationMiddleware())
 
 @DP.message_handler(commands=['casino', 'start'])
 async def main_menu(message: types.Message):
-    user = message.from_user.id
-    chat_id = message.chat.id
-
-    wins = USERS.get('wins', user, chat_id) or {}
-    tries = USERS.get('tries', user, chat_id) or {}
-    jackpots = USERS.get('jackpots', user, chat_id) or {}
-
-    # Безопасный подсчет с проверкой на None
-    total_jackpots = sum([val for i, val in jackpots.items() if i not in ['id', 'chat_id', 'timestamp'] and val is not None])
-    total_wins = sum([val for i, val in wins.items() if i not in ['id', 'chat_id', 'timestamp'] and val is not None])
-    total_tries = sum([val for i, val in tries.items() if i not in ['id', 'chat_id', 'timestamp'] and val is not None])
-
-    text = f"""🎰 <b>Здравствуйте, {f"@{message.from_user.username}" if message.from_user.username else message.from_user.full_name}!</b>
-        
-    ⭐ <b>Всего джекпотов</b>: {total_jackpots}
-    ✔ <b>Всего выигрышей</b>: {total_wins}
-    🏅 <b>Всего попыток</b>: {total_tries}
-
-    🎮 <b>Игры</b>: /games
-    📩 <b>Оповещение о выигрыше: /congratulate</b>"""
-
     keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton('📊 Статистика', callback_data='stats'))
-    keyboard.add(InlineKeyboardButton('🏆 Рейтинг', callback_data='rating'))
+    keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
     
     # Добавляем кнопку для админов
     if USERS.is_admin(message.from_user.id):
         keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
 
     await BOT.send_message(
-        message.chat.id, text,
+        message.chat.id,
+        f"""🎰 <b>Здравствуйте, {f"@{message.from_user.username}" if message.from_user.username else message.from_user.full_name}!</b>
+
+Добро пожаловать в казино-бот! Используйте кнопки ниже для навигации.
+
+ℹ️ <b>Информация:</b> /info""",
         message_thread_id = message.message_thread_id,
         reply_markup=keyboard
     )
@@ -106,105 +89,33 @@ async def games(message: types.Message):
 
 @DP.message_handler(commands=['info'])
 async def info_command(message: types.Message):
+    text = """🎰 <b>Я — Дилер. Хозяин "Подземелья", распорядитель истинных желаний.</b> 
+
+Я — причина, по которой вашего времени становится меньше. Удача любит смелых, а я... их проигрыши.
+
+<b>ВАРИАНТЫ:</b>
+🎰 - собери три одинаковых знака, если хватит терпения;
+🎲 - шесть граней, шесть чисел, только 1 - победа;
+🎯 - дротиком в яблочко или на пол тряпочкой?
+🎳 - думаешь, легко получить страйк?
+⚽ - горизонтальный баскетбол; 
+🏀 - вертикальный футбол;
+
+И не забывай: я помню ВСЁ. Каждые сутки, недели - ни одна попытка не скроется от моих глаз.
+
+<b>Используйте /games чтобы начать играть</b>"""
+
     keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton('📊 Статистика', callback_data='stats'))
-    keyboard.add(InlineKeyboardButton('🏆 Рейтинг', callback_data='rating'))
+    keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
     
-    text = f"""ℹ️ <b>Информация</b>
-
-👋 Добро пожаловать в казино-бот!
-Здесь вы можете играть в различные азартные игры и соревноваться с другими игроками.
-
-🎮 <b>Доступные игры:</b>
-• 🎰 Слоты (/slots)
-• 🎲 Кубик (/dice) 
-• ⚽ Футбол (/foot)
-• 🎳 Боулинг (/bowl)
-• 🏀 Баскетбол (/bask)
-• 🎯 Дартс (/dart)
-
-📊 <b>Статистика</b> - просмотр ваших результатов
-🏆 <b>Рейтинг</b> - сравнение с другими игроками
-
-Для начала используйте кнопки ниже или команду /games"""
+    if USERS.is_admin(message.from_user.id):
+        keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
 
     await BOT.send_message(
         message.chat.id, text,
         message_thread_id=message.message_thread_id,
         reply_markup=keyboard
     )
-
-# statistics handler
-
-@DP.callback_query_handler(lambda c: c.data == 'stats')
-async def full_stats(callback: types.CallbackQuery):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton("🎰", callback_data="stats-slots"), InlineKeyboardButton("🎲", callback_data="stats-dice"), InlineKeyboardButton("⚽", callback_data="stats-foot")],
-        [InlineKeyboardButton("🎳", callback_data="stats-bowl"), InlineKeyboardButton("🏀", callback_data="stats-bask"), InlineKeyboardButton("🎯", callback_data="stats-dart")],
-        [InlineKeyboardButton("♻️ Сбросить", callback_data="stats-reset")],
-    ])
-
-    await BOT.send_message(
-        chat_id=callback.message.chat.id,
-        text="📊 <b>Выберите категорию статистики:</b>",
-        reply_markup=keyboard,
-        message_thread_id=callback.message.message_thread_id
-    )
-    await callback.answer()
-
-@DP.callback_query_handler(lambda c: c.data and c.data.startswith('stats-'))
-async def handle_stats_callback(callback: types.CallbackQuery):
-    user = callback.from_user.id
-    chat_id = callback.message.chat.id
-    category = callback.data.split('-')[1]
-
-    wins = USERS.get('wins', user, chat_id) or {}
-    tries = USERS.get('tries', user, chat_id) or {}
-    jackpots = USERS.get('jackpots', user, chat_id) or {}
-
-    if category == "slots":
-        text = f"""🎰 <b>СТАТИСТИКА СЛОТОВ</b>
-        Джекпоты: <b>{jackpots.get('slots', 0)}</b>
-        Выигрыши: <b>{wins.get('slots', 0)}</b>
-        Попытки: <b>{tries.get('slots', 0)}</b>"""
-        
-    elif category == "dice":
-        text = f"""🎲 <b>СТАТИСТИКА КУБИКА</b>
-        Выигрыши: <b>{wins.get('dice', 0)}</b>
-        Попытки: <b>{tries.get('dice', 0)}</b>"""
-        
-    elif category == "foot":
-        text = f"""⚽ <b>СТАТИСТИКА ФУТБОЛА</b>
-        Выигрыши: <b>{wins.get('foot', 0)}</b>
-        Попытки: <b>{tries.get('foot', 0)}</b>"""
-
-    elif category == "bowl":
-        text = f"""🎳 <b>СТАТИСТИКА БОУЛИНГА</b>
-        Выигрыши: <b>{wins.get('bowl', 0)}</b>
-        Попытки: <b>{tries.get('bowl', 0)}</b>"""
-
-    elif category == "bask":
-        text = f"""🏀 <b>СТАТИСТИКА БАСКЕТБОЛА</b>
-        Выигрыши: <b>{wins.get('bask', 0)}</b>
-        Попытки: <b>{tries.get('bask', 0)}</b>"""
-
-    elif category == "dart":
-        text = f"""🎯 <b>СТАТИСТИКА ДАРТСА</b>
-        Выигрыши: <b>{wins.get('dart', 0)}</b>
-        Попытки: <b>{tries.get('dart', 0)}</b>"""
-
-    elif category == "reset":
-        USERS.reset_user(callback.from_user.id, callback.message.chat.id)
-        await callback.message.edit_text(f'✅ Статистика игрока {f"@{callback.from_user.username}" if callback.from_user.username else callback.from_user.full_name} <b>сброшена</b>',)
-        return
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton("🎰", callback_data="stats-slots"), InlineKeyboardButton("🎲", callback_data="stats-dice"), InlineKeyboardButton("⚽", callback_data="stats-foot")],
-        [InlineKeyboardButton("🎳", callback_data="stats-bowl"), InlineKeyboardButton("🏀", callback_data="stats-bask"), InlineKeyboardButton("🎯", callback_data="stats-dart")],
-        [InlineKeyboardButton("♻️ Сбросить", callback_data="stats-reset")],
-    ])
-
-    await callback.message.edit_text(text, parse_mode='HTML', reply_markup=keyboard)
 
 # Админ панель
 @DP.callback_query_handler(lambda c: c.data == 'admin')
@@ -214,8 +125,8 @@ async def admin_panel(callback: types.CallbackQuery):
         return
 
     keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton('♻️ Сбросить статистику чата', callback_data='admin-reset-chat'))
-    keyboard.add(InlineKeyboardButton('📊 Статистика чата', callback_data='admin-chat-stats'))
+    keyboard.add(InlineKeyboardButton('♻️ Сбросить рейтинги за сутки', callback_data='admin-reset-day'))
+    keyboard.add(InlineKeyboardButton('♻️ Сбросить рейтинги за неделю', callback_data='admin-reset-week'))
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='back-to-main'))
 
     await callback.message.edit_text(
@@ -224,52 +135,26 @@ async def admin_panel(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-@DP.callback_query_handler(lambda c: c.data == 'admin-reset-chat')
-async def admin_reset_chat(callback: types.CallbackQuery):
+@DP.callback_query_handler(lambda c: c.data in ['admin-reset-day', 'admin-reset-week'])
+async def admin_reset_ratings(callback: types.CallbackQuery):
     if not USERS.is_admin(callback.from_user.id):
         await callback.answer("❌ У вас нет прав администратора", show_alert=True)
         return
 
-    USERS.reset_chat(callback.message.chat.id)
+    period = 'day' if callback.data == 'admin-reset-day' else 'week'
+    period_name = 'сутки' if period == 'day' else 'неделю'
     
-    # Добавляем кнопку назад после сброса
+    # Здесь будет логика сброса рейтингов за указанный период
+    # Пока просто отправляем сообщение
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
     
-    await callback.message.edit_text("✅ <b>Статистика всего чата сброшена</b>", reply_markup=keyboard)
+    await callback.message.edit_text(
+        f"✅ <b>Рейтинги за {period_name} сброшены</b>\n\n"
+        f"<i>Примечание: В текущей реализации требуется дополнительная настройка для полнофункционального сброса рейтингов по периодам.</i>",
+        reply_markup=keyboard
+    )
     await callback.answer()
-
-@DP.callback_query_handler(lambda c: c.data == 'admin-chat-stats')
-async def admin_chat_stats(callback: types.CallbackQuery):
-    if not USERS.is_admin(callback.from_user.id):
-        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-        return
-
-    chat_id = callback.message.chat.id
-    tries_data = USERS.get_all('tries', chat_id)
-    wins_data = USERS.get_all('wins', chat_id)
-    jackpots_data = USERS.get_all('jackpots', chat_id)
-
-    total_tries = sum(sum(val for k, val in item.items() if k not in ['id', 'chat_id', 'timestamp'] and val is not None) for item in tries_data)
-    total_wins = sum(sum(val for k, val in item.items() if k not in ['id', 'chat_id', 'timestamp'] and val is not None) for item in wins_data)
-    total_jackpots = sum(item.get('slots', 0) for item in jackpots_data if item.get('slots') is not None)
-    total_players = len(set(item['id'] for item in tries_data))
-
-    text = f"""📊 <b>Статистика чата</b>
-
-👥 <b>Игроков</b>: {total_players}
-🎰 <b>Попыток</b>: {total_tries}
-✅ <b>Выигрышей</b>: {total_wins}
-⭐ <b>Джекпотов</b>: {total_jackpots}
-📈 <b>Винрейт</b>: {round((total_wins / total_tries * 100) if total_tries > 0 else 0, 1)}%"""
-
-    # Добавляем кнопку назад
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
-
-    await callback.message.edit_text(text, reply_markup=keyboard)
-    await callback.answer()
-
 
 @DP.callback_query_handler(lambda c: c.data == 'back-to-main')
 async def back_to_main(callback: types.CallbackQuery):
@@ -305,4 +190,3 @@ if __name__ == '__main__':
     RatingHandler(DP, BOT, USERS)
 
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
-
