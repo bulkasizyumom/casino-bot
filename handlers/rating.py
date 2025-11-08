@@ -36,6 +36,10 @@ class RatingHandler:
                     elif key == 'jackpots':
                         jackpots_data = database.get_time_filtered('jackpots', chat_id, time_filter)
                         value = sum([jackpot.get('slots', 0) for jackpot in jackpots_data if jackpot['id'] == user_id])
+                    elif key == 'wins':  # ИСПРАВЛЕНИЕ: отдельная обработка для выигрышей
+                        wins_data = database.get_time_filtered('wins', chat_id, time_filter)
+                        value = sum([sum([val for k, val in win.items() if k not in ['id', 'chat_id', 'timestamp']]) 
+                                   for win in wins_data if win['id'] == user_id])
                     else:
                         value = sum([val for k, val in user_data.items() if k not in ['id', 'chat_id', 'timestamp']])
                 else:
