@@ -142,8 +142,22 @@ async def admin_reset_ratings(callback: types.CallbackQuery):
     period = 'day' if callback.data == 'admin-reset-day' else 'week'
     period_name = 'сутки' if period == 'day' else 'неделю'
     
+    # Логируем попытку сброса
+    print(f"Attempting to reset {period} stats for chat {callback.message.chat.id}")
+    
+    # Получаем количество записей до сброса
+    time_threshold = int(time.time()) - (86400 if period == 'day' else 604800)
+    tries_before = USERS.cur.execute("SELECT COUNT(*) FROM tries WHERE timestamp >= ?", (time_threshold,)).fetchone()[0]
+    wins_before = USERS.cur.execute("SELECT COUNT(*) FROM wins WHERE timestamp >= ?", (time_threshold,)).fetchone()[0]
+    jackpots_before = USERS.cur.execute("SELECT COUNT(*) FROM jackpots WHERE timestamp >= ?", (time_threshold,)).fetchone()[0]
+    
     # Используем метод из Users для сброса статистики
     success = USERS.reset_period_stats(period)
+    
+    # Получаем количество записей после сброса
+    tries_after = USERS.cur.execute("SELECT COUNT(*) FROM tries WHERE timestamp >= ?", (time_threshold,)).fetchone()[0]
+    wins_after = USERS.cur.execute("SELECT COUNT(*) FROM wins WHERE timestamp >= ?", (time_threshold,)).fetchone()[0]
+    jackpots_after = USERS.cur.execute("SELECT COUNT(*) FROM jackpots WHERE timestamp >= ?", (time_threshold,)).fetchone()[0]
 
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
@@ -151,15 +165,20 @@ async def admin_reset_ratings(callback: types.CallbackQuery):
     if success:
         await callback.message.edit_text(
             f"✅ <b>Рейтинги за {period_name} успешно сброшены!</b>\n\n"
-            f"Все записи старше {period_name} удалены из базы данных.",
+            f"Удалено записей:\n"
+            f"• Попытки: {tries_before} → {tries_after}\n"
+            f"• Выигрыши: {wins_before} → {wins_after}\n"
+            f"• Джекпоты: {jackpots_before} → {jackpots_after}",
             reply_markup=keyboard
         )
+        print(f"Successfully reset {period} stats. Removed: tries={tries_before}, wins={wins_before}, jackpots={jackpots_before}")
     else:
         await callback.message.edit_text(
             f"❌ <b>Ошибка при сбросе рейтингов за {period_name}</b>\n\n"
             f"Попробуйте позже или проверьте логи.",
             reply_markup=keyboard
         )
+        print(f"Failed to reset {period} stats")
     
     await callback.answer()
 
@@ -197,3 +216,4 @@ if __name__ == '__main__':
     RatingHandler(DP, BOT, USERS)
 
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
+
