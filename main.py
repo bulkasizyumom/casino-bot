@@ -123,8 +123,7 @@ async def admin_panel(callback: types.CallbackQuery):
         return
 
     keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton('♻️ Сбросить рейтинги за сутки', callback_data='admin-reset-day'))
-    keyboard.add(InlineKeyboardButton('♻️ Сбросить рейтинги за неделю', callback_data='admin-reset-week'))
+    keyboard.add(InlineKeyboardButton('♻️ Сбросить все рейтинги', callback_data='admin-reset-all'))
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='back-to-main'))
 
     await callback.message.edit_text(
@@ -133,31 +132,28 @@ async def admin_panel(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-@DP.callback_query_handler(lambda c: c.data in ['admin-reset-day', 'admin-reset-week'])
-async def admin_reset_ratings(callback: types.CallbackQuery):
+@DP.callback_query_handler(lambda c: c.data == 'admin-reset-all')
+async def admin_reset_all_ratings(callback: types.CallbackQuery):
     if not USERS.is_admin(callback.from_user.id):
         await callback.answer("❌ У вас нет прав администратора", show_alert=True)
         return
 
-    period = 'day' if callback.data == 'admin-reset-day' else 'week'
-    period_name = 'сутки' if period == 'day' else 'неделю'
-    
-    # Используем метод из Users для сброса статистики
-    success = USERS.reset_period_stats(period)
+    # Используем метод из Users для сброса всей статистики
+    success = USERS.reset_all_stats()
 
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
     
     if success:
         await callback.message.edit_text(
-            f"✅ <b>Рейтинги за {period_name} успешно сброшены!</b>\n\n"
-            f"Все записи за {period_name} удалены из базы данных.",
+            "✅ <b>Все рейтинги успешно сброшены!</b>\n\n"
+            "Вся статистика обнулена. Теперь можно начинать новую статистику с чистого листа.",
             reply_markup=keyboard
         )
     else:
         await callback.message.edit_text(
-            f"❌ <b>Ошибка при сбросе рейтингов за {period_name}</b>\n\n"
-            f"Попробуйте позже или проверьте логи.",
+            "❌ <b>Ошибка при сбросе рейтингов</b>\n\n"
+            "Попробуйте позже или проверьте логи.",
             reply_markup=keyboard
         )
     
@@ -197,5 +193,4 @@ if __name__ == '__main__':
     RatingHandler(DP, BOT, USERS)
 
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
-
 
