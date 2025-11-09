@@ -115,10 +115,6 @@ class Users:
             print(f"Error resetting all stats: {e}")
             return False
 
-    # Удаляем старый метод reset_period_stats
-    # def reset_period_stats(self, period: str):
-    #     ...
-
     def get(self, table: str, id: int, chat_id: int = None):
         try:
             if chat_id is not None:
@@ -158,55 +154,55 @@ class Users:
         except Exception as e: 
             raise UserError(e)
 
-   def increment(self, table: str, id: int, chat_id: int, parameter: str):
-    try:
-        # Сначала получаем текущую запись целиком
-        self.cur.execute(
-            f"SELECT * FROM {table} WHERE id = ? AND chat_id = ?",
-            (id, chat_id)
-        )
-        result = self.cur.fetchone()
-        
-        if result:
-            # Если запись существует, обновляем только нужное поле
-            columns = [description[0] for description in self.cur.description]
-            current_data = dict(zip(columns, result))
-            
-            # Увеличиваем только нужный параметр, остальные сохраняем
-            current_value = current_data.get(parameter, 0) or 0
-            updated_value = current_value + 1
-            
-            # Создаем запрос для обновления только одного поля
-            set_parts = []
-            values = []
-            for col in columns:
-                if col == parameter:
-                    set_parts.append(f"{col} = ?")
-                    values.append(updated_value)
-                elif col not in ['id', 'chat_id', 'timestamp']:
-                    set_parts.append(f"{col} = ?")
-                    values.append(current_data.get(col, 0) or 0)
-            
-            values.extend([id, chat_id])
-            
-            update_query = f"""
-                UPDATE {table} 
-                SET {', '.join(set_parts)}, timestamp = ?
-                WHERE id = ? AND chat_id = ?
-            """
-            values.append(int(time.time()))
-            
-            self.cur.execute(update_query, values)
-        else:
-            # Если записи нет, создаем новую с увеличенным параметром
+    def increment(self, table: str, id: int, chat_id: int, parameter: str):
+        try:
+            # Сначала получаем текущую запись целиком
             self.cur.execute(
-                f"INSERT INTO {table} (id, chat_id, {parameter}, timestamp) VALUES (?, ?, ?, ?)",
-                (id, chat_id, 1, int(time.time()))
+                f"SELECT * FROM {table} WHERE id = ? AND chat_id = ?",
+                (id, chat_id)
             )
-        
-        self.database.conn.commit()
-    except Exception as e: 
-        raise UserError(e)
+            result = self.cur.fetchone()
+            
+            if result:
+                # Если запись существует, обновляем только нужное поле
+                columns = [description[0] for description in self.cur.description]
+                current_data = dict(zip(columns, result))
+                
+                # Увеличиваем только нужный параметр, остальные сохраняем
+                current_value = current_data.get(parameter, 0) or 0
+                updated_value = current_value + 1
+                
+                # Создаем запрос для обновления только одного поля
+                set_parts = []
+                values = []
+                for col in columns:
+                    if col == parameter:
+                        set_parts.append(f"{col} = ?")
+                        values.append(updated_value)
+                    elif col not in ['id', 'chat_id', 'timestamp']:
+                        set_parts.append(f"{col} = ?")
+                        values.append(current_data.get(col, 0) or 0)
+                
+                values.extend([id, chat_id])
+                
+                update_query = f"""
+                    UPDATE {table} 
+                    SET {', '.join(set_parts)}, timestamp = ?
+                    WHERE id = ? AND chat_id = ?
+                """
+                values.append(int(time.time()))
+                
+                self.cur.execute(update_query, values)
+            else:
+                # Если записи нет, создаем новую с увеличенным параметром
+                self.cur.execute(
+                    f"INSERT INTO {table} (id, chat_id, {parameter}, timestamp) VALUES (?, ?, ?, ?)",
+                    (id, chat_id, 1, int(time.time()))
+                )
+            
+            self.database.conn.commit()
+        except Exception as e: 
+            raise UserError(e)
 
     def get_all(self, table: str, chat_id: int = None):
         try:
