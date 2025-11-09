@@ -101,6 +101,22 @@ class Users:
         except Exception as e: 
             raise UserError(e)
 
+    def reset_period_stats(self, period: str):
+        """Сбрасывает статистику за указанный период (day/week)"""
+        try:
+            time_threshold = int(time.time()) - (86400 if period == 'day' else 604800)
+            
+            self.cur.execute("BEGIN")
+            self.cur.execute("DELETE FROM tries WHERE timestamp < ?", (time_threshold,))
+            self.cur.execute("DELETE FROM wins WHERE timestamp < ?", (time_threshold,))
+            self.cur.execute("DELETE FROM jackpots WHERE timestamp < ?", (time_threshold,))
+            self.cur.execute("COMMIT")
+            self.database.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error resetting period stats: {e}")
+            return False
+
     def get(self, table: str, id: int, chat_id: int = None):
         try:
             if chat_id is not None:
@@ -183,21 +199,6 @@ class Users:
                 return []
             raise UserError(e)
 
-    def reset_period_stats(self, period: str):
-    """Сбрасывает статистику за указанный период (day/week)"""
-    try:
-        time_threshold = int(time.time()) - (86400 if period == 'day' else 604800)
-        
-        self.cur.execute("BEGIN")
-        self.cur.execute("DELETE FROM tries WHERE timestamp < ?", (time_threshold,))
-        self.cur.execute("DELETE FROM wins WHERE timestamp < ?", (time_threshold,))
-        self.cur.execute("DELETE FROM jackpots WHERE timestamp < ?", (time_threshold,))
-        self.cur.execute("COMMIT")
-        return True
-    except Exception as e:
-        print(f"Error resetting period stats: {e}")
-        return False
-        
     def get_time_filtered(self, table: str, chat_id: int, time_filter: str):
         """time_filter: 'day' или 'week'"""
         try:
@@ -217,5 +218,4 @@ class Users:
         except Exception as e: 
             if "no such table" in str(e):
                 return []
-
             raise UserError(e)
