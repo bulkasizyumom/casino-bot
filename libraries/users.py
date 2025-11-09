@@ -171,34 +171,74 @@ class Users:
                 # Увеличиваем только нужный параметр, остальные сохраняем
                 current_value = current_data.get(parameter, 0) or 0
                 updated_value = current_value + 1
+                current_data[parameter] = updated_value
+                current_data['timestamp'] = int(time.time())
                 
-                # Создаем запрос для обновления только одного поля
-                set_parts = []
-                values = []
-                for col in columns:
-                    if col == parameter:
-                        set_parts.append(f"{col} = ?")
-                        values.append(updated_value)
-                    elif col not in ['id', 'chat_id', 'timestamp']:
-                        set_parts.append(f"{col} = ?")
-                        values.append(current_data.get(col, 0) or 0)
-                
-                values.extend([id, chat_id])
-                
-                update_query = f"""
-                    UPDATE {table} 
-                    SET {', '.join(set_parts)}, timestamp = ?
-                    WHERE id = ? AND chat_id = ?
-                """
-                values.append(int(time.time()))
-                
-                self.cur.execute(update_query, values)
+                # Создаем запрос INSERT OR REPLACE со всеми полями
+                if table == 'tries':
+                    self.cur.execute(
+                        "INSERT OR REPLACE INTO tries (id, chat_id, slots, dice, dart, bask, foot, bowl, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (id, chat_id, 
+                         current_data.get('slots', 0), 
+                         current_data.get('dice', 0),
+                         current_data.get('dart', 0),
+                         current_data.get('bask', 0),
+                         current_data.get('foot', 0),
+                         current_data.get('bowl', 0),
+                         current_data['timestamp'])
+                    )
+                elif table == 'wins':
+                    self.cur.execute(
+                        "INSERT OR REPLACE INTO wins (id, chat_id, slots, dice, dart, bask, foot, bowl, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (id, chat_id,
+                         current_data.get('slots', 0),
+                         current_data.get('dice', 0),
+                         current_data.get('dart', 0),
+                         current_data.get('bask', 0),
+                         current_data.get('foot', 0),
+                         current_data.get('bowl', 0),
+                         current_data['timestamp'])
+                    )
+                elif table == 'jackpots':
+                    self.cur.execute(
+                        "INSERT OR REPLACE INTO jackpots (id, chat_id, slots, timestamp) VALUES (?, ?, ?, ?)",
+                        (id, chat_id, current_data.get('slots', 0), current_data['timestamp'])
+                    )
             else:
-                # Если записи нет, создаем новую с увеличенным параметром
-                self.cur.execute(
-                    f"INSERT INTO {table} (id, chat_id, {parameter}, timestamp) VALUES (?, ?, ?, ?)",
-                    (id, chat_id, 1, int(time.time()))
-                )
+                # Если записи нет, создаем новую запись со всеми полями
+                if table == 'tries':
+                    base_values = {'slots': 0, 'dice': 0, 'dart': 0, 'bask': 0, 'foot': 0, 'bowl': 0}
+                    base_values[parameter] = 1
+                    self.cur.execute(
+                        "INSERT INTO tries (id, chat_id, slots, dice, dart, bask, foot, bowl, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (id, chat_id,
+                         base_values['slots'],
+                         base_values['dice'],
+                         base_values['dart'],
+                         base_values['bask'],
+                         base_values['foot'],
+                         base_values['bowl'],
+                         int(time.time()))
+                    )
+                elif table == 'wins':
+                    base_values = {'slots': 0, 'dice': 0, 'dart': 0, 'bask': 0, 'foot': 0, 'bowl': 0}
+                    base_values[parameter] = 1
+                    self.cur.execute(
+                        "INSERT INTO wins (id, chat_id, slots, dice, dart, bask, foot, bowl, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (id, chat_id,
+                         base_values['slots'],
+                         base_values['dice'],
+                         base_values['dart'],
+                         base_values['bask'],
+                         base_values['foot'],
+                         base_values['bowl'],
+                         int(time.time()))
+                    )
+                elif table == 'jackpots':
+                    self.cur.execute(
+                        "INSERT INTO jackpots (id, chat_id, slots, timestamp) VALUES (?, ?, ?, ?)",
+                        (id, chat_id, 1 if parameter == 'slots' else 0, int(time.time()))
+                    )
             
             self.database.conn.commit()
         except Exception as e: 
