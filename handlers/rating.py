@@ -168,8 +168,8 @@ class RatingHandler:
             period_name = period_names.get(period, 'сутки')
             criteria_name = criteria_names.get(criteria, 'Выигрыши')
 
-            # Получаем рейтинг
-            rating_data = build_rating(callback.message.chat.id, game, criteria, period)
+            # Получаем рейтинг из новой системы периодов
+            rating_data = build_period_rating(callback.message.chat.id, game, criteria, period)
             user_place = find_user_place(callback.from_user.id, rating_data)
 
             # Формируем текст рейтинга
@@ -201,8 +201,8 @@ class RatingHandler:
             await callback.message.edit_text(text, reply_markup=keyboard)
             await callback.answer()
 
-        def build_rating(chat_id: int, game: str, criteria: str, time_filter: str = None):
-            """Строит рейтинг для конкретной игры и критерия"""
+        def build_period_rating(chat_id: int, game: str, criteria: str, period: str):
+            """Строит рейтинг из системы периодов"""
             ranking = []
             user_names = {}
 
@@ -211,54 +211,42 @@ class RatingHandler:
             for user in all_users:
                 user_names[user['id']] = user.get('name', 'Unknown')
 
-            if time_filter:
-                # Для временных фильтров
-                if criteria == 'wins':
-                    users_data = database.get_time_filtered('wins', chat_id, time_filter)
-                elif criteria == 'tries':
-                    users_data = database.get_time_filtered('tries', chat_id, time_filter)
-                elif criteria == 'jackpots':
-                    users_data = database.get_time_filtered('jackpots', chat_id, time_filter)
-                else:  # winrate
-                    users_data = database.get_time_filtered('tries', chat_id, time_filter)
-            else:
-                # Для общей статистики (если понадобится)
-                if criteria == 'wins':
-                    users_data = database.get_all('wins', chat_id)
-                elif criteria == 'tries':
-                    users_data = database.get_all('tries', chat_id)
-                elif criteria == 'jackpots':
-                    users_data = database.get_all('jackpots', chat_id)
-                else:  # winrate
-                    users_data = database.get_all('tries', chat_id)
+            # Получаем статистику за период
+            if period == 'day':
+                stats_data = database.get_daily_stats(chat_id)
+            else:  # week
+                stats_data = database.get_weekly_stats(chat_id)
 
-            for user_data in users_data:
-                user_id = user_data['id']
-                
-                # Получаем значение для конкретной игры
-                if criteria == 'winrate':
-                    # Для винрейта нужны и победы и попытки
-                    if time_filter:
-                        wins_data = database.get_time_filtered('wins', chat_id, time_filter)
-                        user_wins_data = next((w for w in wins_data if w['id'] == user_id), {})
-                        user_tries_data = next((t for t in users_data if t['id'] == user_id), {})
-                    else:
-                        user_wins_data = database.get('wins', user_id, chat_id) or {}
-                        user_tries_data = database.get('tries', user_id, chat_id) or {}
+            # Группируем статистику по пользователям
+            user_stats = {}
+            for stat in stats_data:
+                if stat['game_type'] == game:
+                    user_id = stat['id']
+                    if user_id not in user_stats:
+                        user_stats[user_id] = {
+                            'tries': 0,
+                            'wins': 0,
+                            'jackpots': 0
+                        }
                     
-                    wins = user_wins_data.get(game, 0)
-                    tries = user_tries_data.get(game, 0)
-                    value = wins / tries if tries > 0 else 0
-                    
+                    user_stats[user_id]['tries'] += stat['tries']
+                    user_stats[user_id]['wins'] += stat['wins']
+                    user_stats[user_id]['jackpots'] += stat['jackpots']
+
+            # Формируем рейтинг
+            for user_id, stats in user_stats.items():
+                if criteria == 'wins':
+                    value = stats['wins']
+                elif criteria == 'tries':
+                    value = stats['tries']
                 elif criteria == 'jackpots':
-                    # Джекпоты только для слотов
-                    value = user_data.get('slots', 0) if game == 'slots' else 0
-                    
+                    value = stats['jackpots']
+                elif criteria == 'winrate':
+                    value = stats['wins'] / stats['tries'] if stats['tries'] > 0 else 0
                 else:
-                    # Выигрыши или попытки для конкретной игры
-                    value = user_data.get(game, 0)
+                    value = 0
 
-                if value > 0:  # Показываем только тех, у кого есть статистика
+                if value > 0:
                     ranking.append(({'id': user_id, 'name': user_names.get(user_id, 'Unknown')}, value))
 
             return sorted(ranking, key=lambda x: x[1], reverse=True)
