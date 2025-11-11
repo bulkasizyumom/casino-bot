@@ -193,4 +193,3 @@ if __name__ == '__main__':
     RatingHandler(DP, BOT, USERS)
 
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
-
