@@ -4,6 +4,7 @@ from libraries.users import Users
 
 class RatingHandler:
     def __init__(self, dp: Dispatcher, bot: Bot, database: Users):
+        self.database = database
         self.register(dp, bot, database)
     
     def register(self, dp: Dispatcher, bot: Bot, database: Users):
@@ -169,8 +170,8 @@ class RatingHandler:
             criteria_name = criteria_names.get(criteria, 'Выигрыши')
 
             # Получаем рейтинг из новой системы периодов
-            rating_data = build_period_rating(callback.message.chat.id, game, criteria, period)
-            user_place = find_user_place(callback.from_user.id, rating_data)
+            rating_data = self.build_period_rating(callback.message.chat.id, game, criteria, period)
+            user_place = self.find_user_place(callback.from_user.id, rating_data)
 
             # Формируем текст рейтинга
             if not rating_data:
@@ -201,59 +202,59 @@ class RatingHandler:
             await callback.message.edit_text(text, reply_markup=keyboard)
             await callback.answer()
 
-        def build_period_rating(chat_id: int, game: str, criteria: str, period: str):
-            """Строит рейтинг из системы периодов"""
-            ranking = []
-            user_names = {}
+    def build_period_rating(self, chat_id: int, game: str, criteria: str, period: str):
+        """Строит рейтинг из системы периодов"""
+        ranking = []
+        user_names = {}
 
-            # Получаем имена пользователей
-            all_users = database.get_all('users')
-            for user in all_users:
-                user_names[user['id']] = user.get('name', 'Unknown')
+        # Получаем имена пользователей
+        all_users = self.database.get_all('users')
+        for user in all_users:
+            user_names[user['id']] = user.get('name', 'Unknown')
 
-            # Получаем статистику за период
-            if period == 'day':
-                stats_data = database.get_daily_stats(chat_id)
-            else:  # week
-                stats_data = database.get_weekly_stats(chat_id)
+        # Получаем статистику за период
+        if period == 'day':
+            stats_data = self.database.get_daily_stats(chat_id)
+        else:  # week
+            stats_data = self.database.get_weekly_stats(chat_id)
 
-            # Группируем статистику по пользователям
-            user_stats = {}
-            for stat in stats_data:
-                if stat['game_type'] == game:
-                    user_id = stat['id']
-                    if user_id not in user_stats:
-                        user_stats[user_id] = {
-                            'tries': 0,
-                            'wins': 0,
-                            'jackpots': 0
-                        }
-                    
-                    user_stats[user_id]['tries'] += stat['tries']
-                    user_stats[user_id]['wins'] += stat['wins']
-                    user_stats[user_id]['jackpots'] += stat['jackpots']
+        # Группируем статистику по пользователям
+        user_stats = {}
+        for stat in stats_data:
+            if stat['game_type'] == game:
+                user_id = stat['id']
+                if user_id not in user_stats:
+                    user_stats[user_id] = {
+                        'tries': 0,
+                        'wins': 0,
+                        'jackpots': 0
+                    }
+                
+                user_stats[user_id]['tries'] += stat['tries']
+                user_stats[user_id]['wins'] += stat['wins']
+                user_stats[user_id]['jackpots'] += stat['jackpots']
 
-            # Формируем рейтинг
-            for user_id, stats in user_stats.items():
-                if criteria == 'wins':
-                    value = stats['wins']
-                elif criteria == 'tries':
-                    value = stats['tries']
-                elif criteria == 'jackpots':
-                    value = stats['jackpots']
-                elif criteria == 'winrate':
-                    value = stats['wins'] / stats['tries'] if stats['tries'] > 0 else 0
-                else:
-                    value = 0
+        # Формируем рейтинг
+        for user_id, stats in user_stats.items():
+            if criteria == 'wins':
+                value = stats['wins']
+            elif criteria == 'tries':
+                value = stats['tries']
+            elif criteria == 'jackpots':
+                value = stats['jackpots']
+            elif criteria == 'winrate':
+                value = stats['wins'] / stats['tries'] if stats['tries'] > 0 else 0
+            else:
+                value = 0
 
-                if value > 0:
-                    ranking.append(({'id': user_id, 'name': user_names.get(user_id, 'Unknown')}, value))
+            if value > 0:
+                ranking.append(({'id': user_id, 'name': user_names.get(user_id, 'Unknown')}, value))
 
-            return sorted(ranking, key=lambda x: x[1], reverse=True)
+        return sorted(ranking, key=lambda x: x[1], reverse=True)
 
-        def find_user_place(user_id: int, ranking: list):
-            """Находит место пользователя в рейтинге"""
-            for index, (user, _) in enumerate(ranking, start=1):
-                if user['id'] == user_id:
-                    return index
-            return '–'
+    def find_user_place(self, user_id: int, ranking: list):
+        """Находит место пользователя в рейтинге"""
+        for index, (user, _) in enumerate(ranking, start=1):
+            if user['id'] == user_id:
+                return index
+        return '–'
