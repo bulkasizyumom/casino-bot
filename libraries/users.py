@@ -1,4 +1,5 @@
 import time
+import datetime
 
 class UserError(Exception):
     pass
@@ -56,6 +57,28 @@ class Users:
             CREATE TABLE IF NOT EXISTS admins (
                 user_id INTEGER PRIMARY KEY
             );
+
+            CREATE TABLE IF NOT EXISTS daily_stats (
+                id INTEGER,
+                chat_id INTEGER,
+                game_type TEXT,
+                tries INTEGER DEFAULT 0,
+                wins INTEGER DEFAULT 0,
+                jackpots INTEGER DEFAULT 0,
+                date TEXT,
+                PRIMARY KEY (id, chat_id, game_type, date)
+            );
+            
+            CREATE TABLE IF NOT EXISTS weekly_stats (
+                id INTEGER,
+                chat_id INTEGER,
+                game_type TEXT,
+                tries INTEGER DEFAULT 0,
+                wins INTEGER DEFAULT 0,
+                jackpots INTEGER DEFAULT 0,
+                week_start TEXT,
+                PRIMARY KEY (id, chat_id, game_type, week_start)
+            );
         ''')
         self.database.conn.commit()
 
@@ -108,12 +131,110 @@ class Users:
             self.cur.execute("DELETE FROM tries")
             self.cur.execute("DELETE FROM wins")
             self.cur.execute("DELETE FROM jackpots")
+            self.cur.execute("DELETE FROM daily_stats")
+            self.cur.execute("DELETE FROM weekly_stats")
             self.cur.execute("COMMIT")
             self.database.conn.commit()
             return True
         except Exception as e:
             print(f"Error resetting all stats: {e}")
             return False
+
+    def get_current_date(self):
+        """Возвращает текущую дату в формате YYYY-MM-DD"""
+        return datetime.datetime.now().strftime("%Y-%m-%d")
+
+    def get_current_week_start(self):
+        """Возвращает дату начала текущей недели (понедельник)"""
+        today = datetime.datetime.now().date()
+        start_of_week = today - datetime.timedelta(days=today.weekday())
+        return start_of_week.strftime("%Y-%m-%d")
+
+    def increment_period_stats(self, user_id: int, chat_id: int, game_type: str, tries: int = 0, wins: int = 0, jackpots: int = 0):
+        """Увеличивает статистику для текущих дня и недели"""
+        try:
+            current_date = self.get_current_date()
+            week_start = self.get_current_week_start()
+            
+            # Обновляем дневную статистику
+            self.cur.execute('''
+                INSERT INTO daily_stats (id, chat_id, game_type, tries, wins, jackpots, date)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id, chat_id, game_type, date) 
+                DO UPDATE SET 
+                    tries = daily_stats.tries + excluded.tries,
+                    wins = daily_stats.wins + excluded.wins,
+                    jackpots = daily_stats.jackpots + excluded.jackpots
+            ''', (user_id, chat_id, game_type, tries, wins, jackpots, current_date))
+            
+            # Обновляем недельную статистику
+            self.cur.execute('''
+                INSERT INTO weekly_stats (id, chat_id, game_type, tries, wins, jackpots, week_start)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id, chat_id, game_type, week_start) 
+                DO UPDATE SET 
+                    tries = weekly_stats.tries + excluded.tries,
+                    wins = weekly_stats.wins + excluded.wins,
+                    jackpots = weekly_stats.jackpots + excluded.jackpots
+            ''', (user_id, chat_id, game_type, tries, wins, jackpots, week_start))
+            
+            self.database.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error updating period stats: {e}")
+            return False
+
+    def get_daily_stats(self, chat_id: int, date: str = None):
+        """Получает дневную статистику"""
+        if date is None:
+            date = self.get_current_date()
+        
+        try:
+            self.cur.execute('''
+                SELECT id, game_type, tries, wins, jackpots 
+                FROM daily_stats 
+                WHERE chat_id = ? AND date = ?
+            ''', (chat_id, date))
+            
+            results = []
+            for row in self.cur.fetchall():
+                results.append({
+                    'id': row[0],
+                    'game_type': row[1],
+                    'tries': row[2] or 0,
+                    'wins': row[3] or 0,
+                    'jackpots': row[4] or 0
+                })
+            return results
+        except Exception as e:
+            print(f"Error getting daily stats: {e}")
+            return []
+
+    def get_weekly_stats(self, chat_id: int, week_start: str = None):
+        """Получает недельную статистику"""
+        if week_start is None:
+            week_start = self.get_current_week_start()
+        
+        try:
+            self.cur.execute('''
+                SELECT id, game_type, tries, wins, jackpots 
+                FROM weekly_stats 
+                WHERE chat_id = ? AND week_start = ?
+            ''', (chat_id, week_start))
+            
+            results = []
+            for row in self.cur.fetchall():
+                results.append({
+                    'id': row[0],
+                    'game_type': row[1],
+                    'tries': row[2] or 0,
+                    'wins': row[3] or 0,
+                    'jackpots': row[4] or 0
+                })
+            return results
+        except Exception as e:
+            print(f"Error getting weekly stats: {e}")
+            return []
 
     def get(self, table: str, id: int, chat_id: int = None):
         try:
