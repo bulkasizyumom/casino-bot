@@ -273,4 +273,40 @@ class RatingHandler:
         user_names = {}
 
         # Получаем имена пользователей
-        all_users = self.database.get
+        all_users = self.database.get_all('users')
+        for user in all_users:
+            user_names[user['id']] = user.get('name', 'Unknown')
+
+        # Получаем статистику за период
+        if period == 'day':
+            stats_data = self.database.get_daily_stats(chat_id)
+        else:  # week
+            stats_data = self.database.get_weekly_stats(chat_id)
+
+        # Группируем статистику по пользователям
+        user_stats = {}
+        for stat in stats_data:
+            if stat['game_type'] == game:
+                user_id = stat['id']
+                if user_id not in user_stats:
+                    user_stats[user_id] = {
+                        'best_streak': 0
+                    }
+                
+                # Для серий берем максимальное значение
+                user_stats[user_id]['best_streak'] = max(user_stats[user_id]['best_streak'], stat['best_streak'])
+
+        # Формируем рейтинг
+        for user_id, stats in user_stats.items():
+            value = stats['best_streak']
+            if value > 0:
+                ranking.append(({'id': user_id, 'name': user_names.get(user_id, 'Unknown')}, value))
+
+        return sorted(ranking, key=lambda x: x[1], reverse=True)
+
+    def find_user_place(self, user_id: int, ranking: list):
+        """Находит место пользователя в рейтинге"""
+        for index, (user, _) in enumerate(ranking, start=1):
+            if user['id'] == user_id:
+                return index
+        return '–'
