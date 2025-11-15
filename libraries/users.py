@@ -171,8 +171,11 @@ class Users:
         return start_of_week.strftime("%Y-%m-%d")
 
     def update_win_streak(self, user_id: int, chat_id: int, game_type: str, is_win: bool):
-        """Обновляет серию выигрышей для пользователя"""
+        """Обновляет серию выигрышей для пользователя и сохраняет лучшие серии"""
         try:
+            current_date = self.get_current_date()
+            week_start = self.get_current_week_start()
+            
             # Получаем текущую серию
             self.cur.execute(
                 "SELECT current_streak, best_streak_today, best_streak_week FROM win_streaks WHERE id = ? AND chat_id = ? AND game_type = ?",
@@ -189,24 +192,45 @@ class Users:
                 best_streak_today = result[1] or 0
                 best_streak_week = result[2] or 0
             
+            streak_updated = False
             if is_win:
                 # Увеличиваем текущую серию
                 current_streak += 1
                 # Обновляем лучшие серии если текущая больше
                 if current_streak > best_streak_today:
                     best_streak_today = current_streak
+                    streak_updated = True
                 if current_streak > best_streak_week:
                     best_streak_week = current_streak
+                    streak_updated = True
             else:
                 # Сбрасываем текущую серию при проигрыше
                 current_streak = 0
             
-            # Сохраняем или обновляем запись
+            # Сохраняем или обновляем запись в win_streaks
             self.cur.execute('''
                 INSERT OR REPLACE INTO win_streaks 
                 (id, chat_id, game_type, current_streak, best_streak_today, best_streak_week, last_win_timestamp) 
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (user_id, chat_id, game_type, current_streak, best_streak_today, best_streak_week, int(time.time()) if is_win else None))
+            
+            # Если серия обновилась - обновляем периодическую статистику
+            if streak_updated:
+                # Обновляем дневную статистику с лучшей серией
+                self.cur.execute('''
+                    INSERT INTO daily_stats (id, chat_id, game_type, tries, wins, jackpots, best_streak, date)
+                    VALUES (?, ?, ?, 0, 0, 0, ?, ?)
+                    ON CONFLICT(id, chat_id, game_type, date) 
+                    DO UPDATE SET best_streak = MAX(daily_stats.best_streak, excluded.best_streak)
+                ''', (user_id, chat_id, game_type, best_streak_today, current_date))
+                
+                # Обновляем недельную статистику с лучшей серией
+                self.cur.execute('''
+                    INSERT INTO weekly_stats (id, chat_id, game_type, tries, wins, jackpots, best_streak, week_start)
+                    VALUES (?, ?, ?, 0, 0, 0, ?, ?)
+                    ON CONFLICT(id, chat_id, game_type, week_start) 
+                    DO UPDATE SET best_streak = MAX(weekly_stats.best_streak, excluded.best_streak)
+                ''', (user_id, chat_id, game_type, best_streak_week, week_start))
             
             self.database.conn.commit()
             return current_streak, best_streak_today, best_streak_week
