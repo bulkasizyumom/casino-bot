@@ -66,6 +66,9 @@ class MessagesHandler:
                 wins = 1
                 is_win = True
 
+            # Обновляем серию выигрышей
+            current_streak, best_streak = database.update_win_streak(user, chat_id, game_name, is_win)
+
             # Обновляем периодическую статистику
             database.increment_period_stats(user, chat_id, game_name, tries, wins, jackpots)
 
