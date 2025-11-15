@@ -118,6 +118,9 @@ class RatingHandler:
             if game == 'slots':
                 keyboard.add(InlineKeyboardButton('⭐ Джекпоты', callback_data=f'rating_criteria-{game}-{period}-jackpots'))
             
+            # Добавляем кнопку для серий выигрышей
+            keyboard.add(InlineKeyboardButton('🔥 Серии выигрышей', callback_data=f'rating_criteria-{game}-{period}-streaks'))
+            
             keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data=f'rating_game-{game}'))
 
             await callback.message.edit_text(
@@ -161,7 +164,8 @@ class RatingHandler:
                 'wins': 'Выигрыши',
                 'tries': 'Попытки',
                 'winrate': 'Винрейт',
-                'jackpots': 'Джекпоты'
+                'jackpots': 'Джекпоты',
+                'streaks': 'Серии выигрышей'
             }
             
             emoji = game_emojis.get(game, '🎰')
@@ -169,8 +173,12 @@ class RatingHandler:
             period_name = period_names.get(period, 'сутки')
             criteria_name = criteria_names.get(criteria, 'Выигрыши')
 
-            # Получаем рейтинг из новой системы периодов
-            rating_data = self.build_period_rating(callback.message.chat.id, game, criteria, period)
+            # Получаем рейтинг
+            if criteria == 'streaks':
+                rating_data = self.build_streak_rating(callback.message.chat.id, game)
+            else:
+                rating_data = self.build_period_rating(callback.message.chat.id, game, criteria, period)
+            
             user_place = self.find_user_place(callback.from_user.id, rating_data)
 
             # Формируем текст рейтинга
@@ -181,6 +189,8 @@ class RatingHandler:
                 for i, (user_data, value) in enumerate(rating_data[:10]):  # Топ-10
                     if criteria == 'winrate':
                         value_text = f"{value:.1%}"
+                    elif criteria == 'streaks':
+                        value_text = f"{int(value)} 🔥"
                     else:
                         value_text = str(int(value))
                     
@@ -249,6 +259,28 @@ class RatingHandler:
 
             if value > 0:
                 ranking.append(({'id': user_id, 'name': user_names.get(user_id, 'Unknown')}, value))
+
+        return sorted(ranking, key=lambda x: x[1], reverse=True)
+
+    def build_streak_rating(self, chat_id: int, game: str):
+        """Строит рейтинг по сериям выигрышей"""
+        ranking = []
+        user_names = {}
+
+        # Получаем имена пользователей
+        all_users = self.database.get_all('users')
+        for user in all_users:
+            user_names[user['id']] = user.get('name', 'Unknown')
+
+        # Получаем серии выигрышей
+        streaks_data = self.database.get_win_streaks(chat_id, game)
+        
+        for streak in streaks_data:
+            user_id = streak['id']
+            current_streak = streak['current_streak']
+            
+            if current_streak > 0:
+                ranking.append(({'id': user_id, 'name': user_names.get(user_id, 'Unknown')}, current_streak))
 
         return sorted(ranking, key=lambda x: x[1], reverse=True)
 
