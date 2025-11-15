@@ -175,7 +175,7 @@ class RatingHandler:
 
             # Получаем рейтинг
             if criteria == 'streaks':
-                rating_data = self.build_streak_rating(callback.message.chat.id, game)
+                rating_data = self.build_streak_rating(callback.message.chat.id, game, period)
             else:
                 rating_data = self.build_period_rating(callback.message.chat.id, game, criteria, period)
             
@@ -237,12 +237,15 @@ class RatingHandler:
                     user_stats[user_id] = {
                         'tries': 0,
                         'wins': 0,
-                        'jackpots': 0
+                        'jackpots': 0,
+                        'best_streak': 0
                     }
                 
                 user_stats[user_id]['tries'] += stat['tries']
                 user_stats[user_id]['wins'] += stat['wins']
                 user_stats[user_id]['jackpots'] += stat['jackpots']
+                # Для серий берем максимальное значение
+                user_stats[user_id]['best_streak'] = max(user_stats[user_id]['best_streak'], stat['best_streak'])
 
         # Формируем рейтинг
         for user_id, stats in user_stats.items():
@@ -254,39 +257,7 @@ class RatingHandler:
                 value = stats['jackpots']
             elif criteria == 'winrate':
                 value = stats['wins'] / stats['tries'] if stats['tries'] > 0 else 0
+            elif criteria == 'streaks':
+                value = stats['best_streak']
             else:
                 value = 0
-
-            if value > 0:
-                ranking.append(({'id': user_id, 'name': user_names.get(user_id, 'Unknown')}, value))
-
-        return sorted(ranking, key=lambda x: x[1], reverse=True)
-
-    def build_streak_rating(self, chat_id: int, game: str):
-        """Строит рейтинг по сериям выигрышей"""
-        ranking = []
-        user_names = {}
-
-        # Получаем имена пользователей
-        all_users = self.database.get_all('users')
-        for user in all_users:
-            user_names[user['id']] = user.get('name', 'Unknown')
-
-        # Получаем серии выигрышей
-        streaks_data = self.database.get_win_streaks(chat_id, game)
-        
-        for streak in streaks_data:
-            user_id = streak['id']
-            current_streak = streak['current_streak']
-            
-            if current_streak > 0:
-                ranking.append(({'id': user_id, 'name': user_names.get(user_id, 'Unknown')}, current_streak))
-
-        return sorted(ranking, key=lambda x: x[1], reverse=True)
-
-    def find_user_place(self, user_id: int, ranking: list):
-        """Находит место пользователя в рейтинге"""
-        for index, (user, _) in enumerate(ranking, start=1):
-            if user['id'] == user_id:
-                return index
-        return '–'
