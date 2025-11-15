@@ -65,6 +65,7 @@ class Users:
                 tries INTEGER DEFAULT 0,
                 wins INTEGER DEFAULT 0,
                 jackpots INTEGER DEFAULT 0,
+                best_streak INTEGER DEFAULT 0,
                 date TEXT,
                 PRIMARY KEY (id, chat_id, game_type, date)
             );
@@ -76,6 +77,7 @@ class Users:
                 tries INTEGER DEFAULT 0,
                 wins INTEGER DEFAULT 0,
                 jackpots INTEGER DEFAULT 0,
+                best_streak INTEGER DEFAULT 0,
                 week_start TEXT,
                 PRIMARY KEY (id, chat_id, game_type, week_start)
             );
@@ -85,7 +87,8 @@ class Users:
                 chat_id INTEGER,
                 game_type TEXT,
                 current_streak INTEGER DEFAULT 0,
-                best_streak INTEGER DEFAULT 0,
+                best_streak_today INTEGER DEFAULT 0,
+                best_streak_week INTEGER DEFAULT 0,
                 last_win_timestamp INTEGER,
                 PRIMARY KEY (id, chat_id, game_type)
             );
@@ -121,6 +124,8 @@ class Users:
             self.cur.execute("DELETE FROM wins WHERE id = ? AND chat_id = ?", (id, chat_id))
             self.cur.execute("DELETE FROM jackpots WHERE id = ? AND chat_id = ?", (id, chat_id))
             self.cur.execute("DELETE FROM win_streaks WHERE id = ? AND chat_id = ?", (id, chat_id))
+            self.cur.execute("DELETE FROM daily_stats WHERE id = ? AND chat_id = ?", (id, chat_id))
+            self.cur.execute("DELETE FROM weekly_stats WHERE id = ? AND chat_id = ?", (id, chat_id))
             self.cur.execute("COMMIT")
         except Exception as e: 
             raise UserError(e)
@@ -132,6 +137,8 @@ class Users:
             self.cur.execute("DELETE FROM wins WHERE chat_id = ?", (chat_id,))
             self.cur.execute("DELETE FROM jackpots WHERE chat_id = ?", (chat_id,))
             self.cur.execute("DELETE FROM win_streaks WHERE chat_id = ?", (chat_id,))
+            self.cur.execute("DELETE FROM daily_stats WHERE chat_id = ?", (chat_id,))
+            self.cur.execute("DELETE FROM weekly_stats WHERE chat_id = ?", (chat_id,))
             self.cur.execute("COMMIT")
         except Exception as e: 
             raise UserError(e)
@@ -168,24 +175,28 @@ class Users:
         try:
             # Получаем текущую серию
             self.cur.execute(
-                "SELECT current_streak, best_streak FROM win_streaks WHERE id = ? AND chat_id = ? AND game_type = ?",
+                "SELECT current_streak, best_streak_today, best_streak_week FROM win_streaks WHERE id = ? AND chat_id = ? AND game_type = ?",
                 (user_id, chat_id, game_type)
             )
             result = self.cur.fetchone()
             
             current_streak = 0
-            best_streak = 0
+            best_streak_today = 0
+            best_streak_week = 0
             
             if result:
                 current_streak = result[0] or 0
-                best_streak = result[1] or 0
+                best_streak_today = result[1] or 0
+                best_streak_week = result[2] or 0
             
             if is_win:
                 # Увеличиваем текущую серию
                 current_streak += 1
-                # Обновляем лучшую серию если текущая больше
-                if current_streak > best_streak:
-                    best_streak = current_streak
+                # Обновляем лучшие серии если текущая больше
+                if current_streak > best_streak_today:
+                    best_streak_today = current_streak
+                if current_streak > best_streak_week:
+                    best_streak_week = current_streak
             else:
                 # Сбрасываем текущую серию при проигрыше
                 current_streak = 0
@@ -193,32 +204,92 @@ class Users:
             # Сохраняем или обновляем запись
             self.cur.execute('''
                 INSERT OR REPLACE INTO win_streaks 
-                (id, chat_id, game_type, current_streak, best_streak, last_win_timestamp) 
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (user_id, chat_id, game_type, current_streak, best_streak, int(time.time()) if is_win else None))
+                (id, chat_id, game_type, current_streak, best_streak_today, best_streak_week, last_win_timestamp) 
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (user_id, chat_id, game_type, current_streak, best_streak_today, best_streak_week, int(time.time()) if is_win else None))
             
             self.database.conn.commit()
-            return current_streak, best_streak
+            return current_streak, best_streak_today, best_streak_week
         except Exception as e:
             print(f"Error updating win streak: {e}")
-            return 0, 0
+            return 0, 0, 0
+
+    def update_period_streaks(self):
+        """Обновляет лучшие серии в периодической статистике (вызывается раз в день/неделю)"""
+        try:
+            current_date = self.get_current_date()
+            week_start = self.get_current_week_start()
+            
+            # Обновляем дневные серии
+            self.cur.execute('''
+                UPDATE daily_stats 
+                SET best_streak = (
+                    SELECT best_streak_today 
+                    FROM win_streaks 
+                    WHERE win_streaks.id = daily_stats.id 
+                    AND win_streaks.chat_id = daily_stats.chat_id 
+                    AND win_streaks.game_type = daily_stats.game_type
+                )
+                WHERE date = ?
+            ''', (current_date,))
+            
+            # Обновляем недельные серии
+            self.cur.execute('''
+                UPDATE weekly_stats 
+                SET best_streak = (
+                    SELECT best_streak_week 
+                    FROM win_streaks 
+                    WHERE win_streaks.id = weekly_stats.id 
+                    AND win_streaks.chat_id = weekly_stats.chat_id 
+                    AND win_streaks.game_type = weekly_stats.game_type
+                )
+                WHERE week_start = ?
+            ''', (week_start,))
+            
+            # Сбрасываем дневные серии в win_streaks для нового дня
+            self.cur.execute('''
+                UPDATE win_streaks 
+                SET best_streak_today = 0,
+                    current_streak = 0
+            ''')
+            
+            self.database.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error updating period streaks: {e}")
+            return False
+
+    def reset_weekly_streaks(self):
+        """Сбрасывает недельные серии (вызывается раз в неделю)"""
+        try:
+            # Сбрасываем недельные серии в win_streaks для новой недели
+            self.cur.execute('''
+                UPDATE win_streaks 
+                SET best_streak_week = 0,
+                    current_streak = 0
+            ''')
+            self.database.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error resetting weekly streaks: {e}")
+            return False
 
     def get_win_streaks(self, chat_id: int, game_type: str = None):
         """Получает серии выигрышей для чата"""
         try:
             if game_type:
                 self.cur.execute('''
-                    SELECT id, game_type, current_streak, best_streak 
+                    SELECT id, game_type, best_streak_today, best_streak_week 
                     FROM win_streaks 
-                    WHERE chat_id = ? AND game_type = ? AND current_streak > 0
-                    ORDER BY current_streak DESC
+                    WHERE chat_id = ? AND game_type = ? AND (best_streak_today > 0 OR best_streak_week > 0)
+                    ORDER BY best_streak_today DESC, best_streak_week DESC
                 ''', (chat_id, game_type))
             else:
                 self.cur.execute('''
-                    SELECT id, game_type, current_streak, best_streak 
+                    SELECT id, game_type, best_streak_today, best_streak_week 
                     FROM win_streaks 
-                    WHERE chat_id = ? AND current_streak > 0
-                    ORDER BY current_streak DESC
+                    WHERE chat_id = ? AND (best_streak_today > 0 OR best_streak_week > 0)
+                    ORDER BY best_streak_today DESC, best_streak_week DESC
                 ''', (chat_id,))
             
             results = []
@@ -226,8 +297,8 @@ class Users:
                 results.append({
                     'id': row[0],
                     'game_type': row[1],
-                    'current_streak': row[2] or 0,
-                    'best_streak': row[3] or 0
+                    'best_streak_today': row[2] or 0,
+                    'best_streak_week': row[3] or 0
                 })
             return results
         except Exception as e:
@@ -240,27 +311,32 @@ class Users:
             current_date = self.get_current_date()
             week_start = self.get_current_week_start()
             
+            # Получаем текущие лучшие серии
+            current_streak, best_streak_today, best_streak_week = self.update_win_streak(user_id, chat_id, game_type, wins > 0)
+            
             # Обновляем дневную статистику
             self.cur.execute('''
-                INSERT INTO daily_stats (id, chat_id, game_type, tries, wins, jackpots, date)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO daily_stats (id, chat_id, game_type, tries, wins, jackpots, best_streak, date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id, chat_id, game_type, date) 
                 DO UPDATE SET 
                     tries = daily_stats.tries + excluded.tries,
                     wins = daily_stats.wins + excluded.wins,
-                    jackpots = daily_stats.jackpots + excluded.jackpots
-            ''', (user_id, chat_id, game_type, tries, wins, jackpots, current_date))
+                    jackpots = daily_stats.jackpots + excluded.jackpots,
+                    best_streak = MAX(daily_stats.best_streak, excluded.best_streak)
+            ''', (user_id, chat_id, game_type, tries, wins, jackpots, best_streak_today, current_date))
             
             # Обновляем недельную статистику
             self.cur.execute('''
-                INSERT INTO weekly_stats (id, chat_id, game_type, tries, wins, jackpots, week_start)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO weekly_stats (id, chat_id, game_type, tries, wins, jackpots, best_streak, week_start)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id, chat_id, game_type, week_start) 
                 DO UPDATE SET 
                     tries = weekly_stats.tries + excluded.tries,
                     wins = weekly_stats.wins + excluded.wins,
-                    jackpots = weekly_stats.jackpots + excluded.jackpots
-            ''', (user_id, chat_id, game_type, tries, wins, jackpots, week_start))
+                    jackpots = weekly_stats.jackpots + excluded.jackpots,
+                    best_streak = MAX(weekly_stats.best_streak, excluded.best_streak)
+            ''', (user_id, chat_id, game_type, tries, wins, jackpots, best_streak_week, week_start))
             
             self.database.conn.commit()
             return True
@@ -275,7 +351,7 @@ class Users:
         
         try:
             self.cur.execute('''
-                SELECT id, game_type, tries, wins, jackpots 
+                SELECT id, game_type, tries, wins, jackpots, best_streak
                 FROM daily_stats 
                 WHERE chat_id = ? AND date = ?
             ''', (chat_id, date))
@@ -287,7 +363,8 @@ class Users:
                     'game_type': row[1],
                     'tries': row[2] or 0,
                     'wins': row[3] or 0,
-                    'jackpots': row[4] or 0
+                    'jackpots': row[4] or 0,
+                    'best_streak': row[5] or 0
                 })
             return results
         except Exception as e:
@@ -301,7 +378,7 @@ class Users:
         
         try:
             self.cur.execute('''
-                SELECT id, game_type, tries, wins, jackpots 
+                SELECT id, game_type, tries, wins, jackpots, best_streak
                 FROM weekly_stats 
                 WHERE chat_id = ? AND week_start = ?
             ''', (chat_id, week_start))
@@ -313,7 +390,8 @@ class Users:
                     'game_type': row[1],
                     'tries': row[2] or 0,
                     'wins': row[3] or 0,
-                    'jackpots': row[4] or 0
+                    'jackpots': row[4] or 0,
+                    'best_streak': row[5] or 0
                 })
             return results
         except Exception as e:
@@ -491,4 +569,3 @@ class Users:
             if "no such table" in str(e):
                 return []
             raise UserError(e)
-
