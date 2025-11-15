@@ -18,6 +18,7 @@ from database.database import Database
 load_dotenv()
 
 BOT_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
+BOT = Bot(token=BOT_TOKEN, parse_mode='HTML')
 STORAGE = MemoryStorage()
 DP = Dispatcher(BOT, storage=STORAGE)
 
@@ -193,4 +194,5 @@ if __name__ == '__main__':
     RatingHandler(DP, BOT, USERS)
 
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
+
 
