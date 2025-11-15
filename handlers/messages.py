@@ -67,7 +67,7 @@ class MessagesHandler:
                 is_win = True
 
             # Обновляем серию выигрышей
-           current_streak, best_streak_today, best_streak_week = database.update_win_streak(user, chat_id, game_name, is_win)
+            current_streak, best_streak_today, best_streak_week = database.update_win_streak(user, chat_id, game_name, is_win)
 
             # Обновляем периодическую статистику
             database.increment_period_stats(user, chat_id, game_name, tries, wins, jackpots)
@@ -116,4 +116,7 @@ class MessagesHandler:
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
             await process_dice(dice_message, emoji, dice_message.dice.value, message.from_user.id)
+            dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
+            await process_dice(dice_message, emoji, dice_message.dice.value, message.from_user.id)
+
 
