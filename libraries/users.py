@@ -311,9 +311,6 @@ class Users:
             current_date = self.get_current_date()
             week_start = self.get_current_week_start()
             
-            # Получаем текущие лучшие серии
-            current_streak, best_streak_today, best_streak_week = self.update_win_streak(user_id, chat_id, game_type, wins > 0)
-            
             # Обновляем дневную статистику
             self.cur.execute('''
                 INSERT INTO daily_stats (id, chat_id, game_type, tries, wins, jackpots, best_streak, date)
@@ -322,9 +319,8 @@ class Users:
                 DO UPDATE SET 
                     tries = daily_stats.tries + excluded.tries,
                     wins = daily_stats.wins + excluded.wins,
-                    jackpots = daily_stats.jackpots + excluded.jackpots,
-                    best_streak = MAX(daily_stats.best_streak, excluded.best_streak)
-            ''', (user_id, chat_id, game_type, tries, wins, jackpots, best_streak_today, current_date))
+                    jackpots = daily_stats.jackpots + excluded.jackpots
+            ''', (user_id, chat_id, game_type, tries, wins, jackpots, 0, current_date))
             
             # Обновляем недельную статистику
             self.cur.execute('''
@@ -334,9 +330,8 @@ class Users:
                 DO UPDATE SET 
                     tries = weekly_stats.tries + excluded.tries,
                     wins = weekly_stats.wins + excluded.wins,
-                    jackpots = weekly_stats.jackpots + excluded.jackpots,
-                    best_streak = MAX(weekly_stats.best_streak, excluded.best_streak)
-            ''', (user_id, chat_id, game_type, tries, wins, jackpots, best_streak_week, week_start))
+                    jackpots = weekly_stats.jackpots + excluded.jackpots
+            ''', (user_id, chat_id, game_type, tries, wins, jackpots, 0, week_start))
             
             self.database.conn.commit()
             return True
