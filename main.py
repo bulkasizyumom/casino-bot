@@ -217,6 +217,18 @@ async def add_admin(message: types.Message):
 if __name__ == '__main__':
     print("🎯 Запуск обработчиков...")
     
+    # ДИАГНОСТИКА ПЕРЕМЕННЫХ
+    print("🔍 ПРОВЕРКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ:")
+    print(f"   BOT_TOKEN: {'✅ ЕСТЬ' if os.getenv('BOT_TOKEN') else '❌ НЕТ'}")
+    print(f"   TELEGRAM_BOT_TOKEN: {'✅ ЕСТЬ' if os.getenv('TELEGRAM_BOT_TOKEN') else '❌ НЕТ'}")
+    
+    if BOT_TOKEN:
+        print(f"   Длина токена: {len(BOT_TOKEN)} символов")
+        print(f"   Начинается с: {BOT_TOKEN[:10]}...")
+    else:
+        print("❌ Токен не найден!")
+        exit(1)
+
     # Проверка что обработчики зарегистрированы
     print(f"🔍 Зарегистрировано handlers: {len(DP.message_handlers.handlers)}")
     
@@ -225,10 +237,32 @@ if __name__ == '__main__':
     
     print(f"🔍 После регистрации handlers: {len(DP.message_handlers.handlers)}")
 
-    # ⚠️ ПРОСТОЙ ЗАПУСК - как РАНЬШЕ РАБОТАЛО
-    print("✅ Бот запущен! Ожидаю сообщения...")
-    print("=" * 50)
-    
-    # Убираем ВСЕ сложные asyncio - используем старый добрый executor
+    # Проверка доступности бота
+    async def test_bot():
+        try:
+            me = await BOT.get_me()
+            print(f"✅ Бот: {me.first_name} (@{me.username}) [ID: {me.id}]")
+            return True
+        except Exception as e:
+            print(f"❌ Ошибка доступа к боту: {e}")
+            return False
+
+    # Запуск с диагностикой
     from aiogram.utils import executor
-    executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
+    import asyncio
+    
+    # Создаем event loop для теста
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    if loop.run_until_complete(test_bot()):
+        print("✅ Бот запущен! Ожидаю сообщения...")
+        print("=" * 50)
+        
+        # Очистка вебхука и очереди сообщений
+        loop.run_until_complete(BOT.delete_webhook())
+        loop.run_until_complete(BOT.get_updates(offset=-1))
+        
+        executor.start_polling(DP, skip_updates=True, allowed_updates=["message", "callback_query"])
+    else:
+        print("❌ Не удалось запустить бота. Проверьте токен.")
