@@ -219,18 +219,21 @@ if __name__ == '__main__':
     MessagesHandler(DP, BOT, GAMES, USERS)
     RatingHandler(DP, BOT, USERS)
 
-    # ⚠️ ДОБАВЬТЕ ЭТОТ КОД - принудительный сброс webhook
+    # 🔧 ИСПРАВЛЕННЫЙ КОД - правильный запуск event loop
     import asyncio
-    async def reset_webhook():
+    
+    async def main():
+        # Сброс webhook
         try:
             await BOT.delete_webhook()
             print("✅ Webhook сброшен!")
         except Exception as e:
             print(f"❌ Ошибка сброса webhook: {e}")
-    
-    asyncio.run(reset_webhook())
+        
+        # Запуск polling
+        print("✅ Бот запущен! Ожидаю сообщения...")
+        print("=" * 50)
+        await DP.start_polling()
 
-    print("✅ Бот запущен! Ожидаю сообщения...")
-    print("=" * 50)
-    
-    executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
+    # Запуск асинхронной функции
+    asyncio.run(main())
