@@ -219,32 +219,16 @@ if __name__ == '__main__':
     
     # Проверка что обработчики зарегистрированы
     print(f"🔍 Зарегистрировано handlers: {len(DP.message_handlers.handlers)}")
-    for handler in DP.message_handlers.handlers:
-        print(f"   - {handler}")
     
     MessagesHandler(DP, BOT, GAMES, USERS)
     RatingHandler(DP, BOT, USERS)
     
     print(f"🔍 После регистрации handlers: {len(DP.message_handlers.handlers)}")
 
-    # 🔧 ИСПРАВЛЕННЫЙ КОД - правильный запуск
-    import asyncio
+    # ⚠️ ПРОСТОЙ ЗАПУСК - как РАНЬШЕ РАБОТАЛО
+    print("✅ Бот запущен! Ожидаю сообщения...")
+    print("=" * 50)
     
-    async def main():
-        # Сброс webhook
-        try:
-            await BOT.delete_webhook()
-            print("✅ Webhook сброшен!")
-        except Exception as e:
-            print(f"❌ Ошибка сброса webhook: {e}")
-        
-        # Запуск polling
-        print("✅ Бот запущен! Ожидаю сообщения...")
-        print("=" * 50)
-        
-        # Запускаем через executor (старый способ)
-        from aiogram.utils import executor
-        executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
-
-    # Запуск асинхронной функции
-    asyncio.run(main())
+    # Убираем ВСЕ сложные asyncio - используем старый добрый executor
+    from aiogram.utils import executor
+    executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
