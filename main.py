@@ -98,7 +98,6 @@ async def main_menu(message: types.Message):
     )
 
 # games
-
 @DP.message_handler(commands=['games'])
 async def games(message: types.Message):
     text = f"""🎰 <b>Слоты:</b> /slots
@@ -114,7 +113,6 @@ async def games(message: types.Message):
     )
 
 # info command
-
 @DP.message_handler(commands=['info'])
 async def info_command(message: types.Message):
     text = """🎰 <b>Я — Дилер. Хозяин "Подземелья", распорядитель истинных желаний.</b> 
@@ -220,6 +218,17 @@ if __name__ == '__main__':
     print("🎯 Запуск обработчиков...")
     MessagesHandler(DP, BOT, GAMES, USERS)
     RatingHandler(DP, BOT, USERS)
+
+    # ⚠️ ДОБАВЬТЕ ЭТОТ КОД - принудительный сброс webhook
+    import asyncio
+    async def reset_webhook():
+        try:
+            await BOT.delete_webhook()
+            print("✅ Webhook сброшен!")
+        except Exception as e:
+            print(f"❌ Ошибка сброса webhook: {e}")
+    
+    asyncio.run(reset_webhook())
 
     print("✅ Бот запущен! Ожидаю сообщения...")
     print("=" * 50)
