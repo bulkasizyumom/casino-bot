@@ -13,11 +13,19 @@ from handlers.rating import RatingHandler
 from libraries.users import Users
 from database.database import Database
 
+# ⚠️ ДИАГНОСТИКА - добавьте в самое начало
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+print("🚀 ЗАПУСК БОТА - ДИАГНОСТИКА")
+print("=" * 50)
+
 # variables
 
 load_dotenv()
 
 BOT_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
+print(f"🔐 Токен: {BOT_TOKEN[:10]}...") if BOT_TOKEN else print("❌ Токен не найден!")
 
 # СОЗДАНИЕ ОБЪЕКТА БОТА
 BOT = Bot(token=BOT_TOKEN, parse_mode='HTML')
@@ -37,24 +45,40 @@ GAMES = {
     '🎲': {'name': 'dice',  'win': [1]},
 }
 
+print(f"🎮 Игры: {list(GAMES.keys())}")
+
 # Добавляем админов (замените на реальные ID)
 ADMIN_IDS = [1773287874, 1995856157]  # Замените на реальные ID администраторов
 for admin_id in ADMIN_IDS:
     USERS.add_admin(admin_id)
 
+print(f"👑 Админы: {ADMIN_IDS}")
+
 # user register
 
 class UserRegistrationMiddleware(BaseMiddleware):
     async def on_pre_process_message(self, message: types.Message, data: dict):
+        print(f"📨 Сообщение от {message.from_user.id}: {message.content_type}")
         if not USERS.get('users', message.from_user.id):
             USERS.add(message.from_user.id, message.from_user.full_name)
+            print(f"✅ Зарегистрирован: {message.from_user.id}")
 
 DP.middleware.setup(UserRegistrationMiddleware())
 
-# main menu handler
+# ДИАГНОСТИЧЕСКИЙ обработчик ВСЕХ сообщений
+@DP.message_handler(content_types=ContentType.ANY)
+async def debug_all_messages(message: types.Message):
+    print(f"🔍 ВСЕ СООБЩЕНИЯ:")
+    print(f"   Чат: {message.chat.id} | Пользователь: {message.from_user.id}")
+    print(f"   Тип: {message.content_type} | Текст: {message.text}")
+    if message.dice:
+        print(f"   🎲 DICE: {message.dice.emoji} = {message.dice.value}")
+    print("---")
 
+# main menu handler
 @DP.message_handler(commands=['casino', 'start'])
 async def main_menu(message: types.Message):
+    print(f"🎰 Команда /start от {message.from_user.id}")
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
     
@@ -193,8 +217,11 @@ async def add_admin(message: types.Message):
         await message.reply("❌ Используйте: /addadmin <user_id>")
 
 if __name__ == '__main__':
+    print("🎯 Запуск обработчиков...")
     MessagesHandler(DP, BOT, GAMES, USERS)
     RatingHandler(DP, BOT, USERS)
 
+    print("✅ Бот запущен! Ожидаю сообщения...")
+    print("=" * 50)
+    
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
-
