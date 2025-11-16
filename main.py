@@ -216,10 +216,18 @@ async def add_admin(message: types.Message):
 
 if __name__ == '__main__':
     print("🎯 Запуск обработчиков...")
+    
+    # Проверка что обработчики зарегистрированы
+    print(f"🔍 Зарегистрировано handlers: {len(DP.message_handlers.handlers)}")
+    for handler in DP.message_handlers.handlers:
+        print(f"   - {handler}")
+    
     MessagesHandler(DP, BOT, GAMES, USERS)
     RatingHandler(DP, BOT, USERS)
+    
+    print(f"🔍 После регистрации handlers: {len(DP.message_handlers.handlers)}")
 
-    # 🔧 ИСПРАВЛЕННЫЙ КОД - правильный запуск event loop
+    # 🔧 ИСПРАВЛЕННЫЙ КОД - правильный запуск
     import asyncio
     
     async def main():
@@ -233,7 +241,10 @@ if __name__ == '__main__':
         # Запуск polling
         print("✅ Бот запущен! Ожидаю сообщения...")
         print("=" * 50)
-        await DP.start_polling()
+        
+        # Запускаем через executor (старый способ)
+        from aiogram.utils import executor
+        executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
 
     # Запуск асинхронной функции
     asyncio.run(main())
