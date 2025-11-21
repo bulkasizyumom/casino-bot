@@ -66,13 +66,6 @@ class MessagesHandler:
                 wins = 1
                 is_win = True
 
-            # Обновляем серию выигрышей
-            current_streak, best_streak_today, best_streak_week = database.update_win_streak(user, chat_id, game_name, is_win)
-            
-            # Логируем информацию о серии для отладки
-            if is_win:
-                print(f"🎯 Серия: user={user}, game={game_name}, current={current_streak}, best_today={best_streak_today}, best_week={best_streak_week}")
-
             # Обновляем периодическую статистику
             database.increment_period_stats(user, chat_id, game_name, tries, wins, jackpots)
 
@@ -97,6 +90,7 @@ class MessagesHandler:
             if message.forward_date:
                 return  # Игнорируем команды из пересланных сообщений
 
+
             # Проверяем анти-спам защиту для команд
             current_time = time.time()
             user_key = f"{message.from_user.id}_{message.chat.id}"
@@ -120,4 +114,5 @@ class MessagesHandler:
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
             await process_dice(dice_message, emoji, dice_message.dice.value, message.from_user.id)
+
 
