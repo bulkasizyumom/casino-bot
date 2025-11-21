@@ -66,6 +66,27 @@ class MessagesHandler:
                 wins = 1
                 is_win = True
 
+            # 🔥 ОБНОВЛЯЕМ СЕРИИ ПОБЕД
+            current_streak, max_streak = database.update_win_streak(user, chat_id, game_name, is_win)
+            
+            # Если установлена новая максимальная серия, уведомляем
+            if is_win and current_streak > 3:  # Уведомляем только при серии от 4 побед
+                streak_message = ""
+                if current_streak == 4:
+                    streak_message = "🔥"
+                elif current_streak == 5:
+                    streak_message = "🔥🔥"
+                elif current_streak >= 6:
+                    streak_message = "🔥🔥🔥"
+                
+                if streak_message:
+                    await asyncio.sleep(1.5)
+                    await bot.send_message(
+                        message.chat.id,
+                        f'{streak_message} <b>Серия побед!</b> {current_streak} подряд!',
+                        message_thread_id=message.message_thread_id
+                    )
+
             # Обновляем периодическую статистику
             database.increment_period_stats(user, chat_id, game_name, tries, wins, jackpots)
 
@@ -90,7 +111,6 @@ class MessagesHandler:
             if message.forward_date:
                 return  # Игнорируем команды из пересланных сообщений
 
-
             # Проверяем анти-спам защиту для команд
             current_time = time.time()
             user_key = f"{message.from_user.id}_{message.chat.id}"
@@ -114,5 +134,4 @@ class MessagesHandler:
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
             await process_dice(dice_message, emoji, dice_message.dice.value, message.from_user.id)
-
 
