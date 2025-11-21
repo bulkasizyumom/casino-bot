@@ -79,6 +79,25 @@ class Users:
                 week_start TEXT,
                 PRIMARY KEY (id, chat_id, game_type, week_start)
             );
+
+            -- НОВАЯ ТАБЛИЦА ДЛЯ СЕРИЙ ПОБЕД
+            CREATE TABLE IF NOT EXISTS win_streaks (
+                id INTEGER,
+                chat_id INTEGER,
+                game_type TEXT,
+                current_streak INTEGER DEFAULT 0,
+                max_streak INTEGER DEFAULT 0,
+                last_win_timestamp INTEGER,
+                PRIMARY KEY (id, chat_id, game_type)
+            );
+
+            -- ТАБЛИЦА ДЛЯ СБРОСА СЕРИЙ
+            CREATE TABLE IF NOT EXISTS streak_resets (
+                chat_id INTEGER,
+                reset_type TEXT,
+                last_reset TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (chat_id, reset_type)
+            );
         ''')
         self.database.conn.commit()
 
@@ -110,10 +129,10 @@ class Users:
             self.cur.execute("DELETE FROM tries WHERE id = ? AND chat_id = ?", (id, chat_id))
             self.cur.execute("DELETE FROM wins WHERE id = ? AND chat_id = ?", (id, chat_id))
             self.cur.execute("DELETE FROM jackpots WHERE id = ? AND chat_id = ?", (id, chat_id))
+            self.cur.execute("DELETE FROM win_streaks WHERE id = ? AND chat_id = ?", (id, chat_id))
             self.cur.execute("COMMIT")
         except Exception as e: 
             raise UserError(e)
-
 
     def reset_chat(self, chat_id: int):
         try:
@@ -121,6 +140,7 @@ class Users:
             self.cur.execute("DELETE FROM tries WHERE chat_id = ?", (chat_id,))
             self.cur.execute("DELETE FROM wins WHERE chat_id = ?", (chat_id,))
             self.cur.execute("DELETE FROM jackpots WHERE chat_id = ?", (chat_id,))
+            self.cur.execute("DELETE FROM win_streaks WHERE chat_id = ?", (chat_id,))
             self.cur.execute("COMMIT")
         except Exception as e: 
             raise UserError(e)
@@ -134,12 +154,96 @@ class Users:
             self.cur.execute("DELETE FROM jackpots")
             self.cur.execute("DELETE FROM daily_stats")
             self.cur.execute("DELETE FROM weekly_stats")
+            self.cur.execute("DELETE FROM win_streaks")
+            self.cur.execute("DELETE FROM streak_resets")
             self.cur.execute("COMMIT")
             self.database.conn.commit()
             return True
         except Exception as e:
             print(f"Error resetting all stats: {e}")
             return False
+
+    def reset_streaks(self, chat_id: int = None):
+        """Сбрасывает все серии побед"""
+        try:
+            if chat_id:
+                self.cur.execute("DELETE FROM win_streaks WHERE chat_id = ?", (chat_id,))
+            else:
+                self.cur.execute("DELETE FROM win_streaks")
+            self.database.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error resetting streaks: {e}")
+            return False
+
+    def update_win_streak(self, user_id: int, chat_id: int, game_type: str, is_win: bool):
+        """Обновляет серию побед для пользователя"""
+        try:
+            # Получаем текущую серию
+            self.cur.execute(
+                "SELECT current_streak, max_streak FROM win_streaks WHERE id = ? AND chat_id = ? AND game_type = ?",
+                (user_id, chat_id, game_type)
+            )
+            result = self.cur.fetchone()
+            
+            current_streak = 0
+            max_streak = 0
+            
+            if result:
+                current_streak, max_streak = result
+            
+            if is_win:
+                # Увеличиваем серию при выигрыше
+                current_streak += 1
+                if current_streak > max_streak:
+                    max_streak = current_streak
+            else:
+                # Сбрасываем серию при проигрыше
+                current_streak = 0
+            
+            # Сохраняем или обновляем запись
+            self.cur.execute('''
+                INSERT OR REPLACE INTO win_streaks 
+                (id, chat_id, game_type, current_streak, max_streak, last_win_timestamp) 
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (user_id, chat_id, game_type, current_streak, max_streak, int(time.time()) if is_win else None))
+            
+            self.database.conn.commit()
+            return current_streak, max_streak
+            
+        except Exception as e:
+            print(f"Error updating win streak: {e}")
+            return 0, 0
+
+    def get_win_streaks(self, chat_id: int, game_type: str = None):
+        """Получает максимальные серии побед"""
+        try:
+            if game_type:
+                self.cur.execute('''
+                    SELECT id, game_type, max_streak 
+                    FROM win_streaks 
+                    WHERE chat_id = ? AND game_type = ? AND max_streak > 0
+                    ORDER BY max_streak DESC
+                ''', (chat_id, game_type))
+            else:
+                self.cur.execute('''
+                    SELECT id, game_type, max_streak 
+                    FROM win_streaks 
+                    WHERE chat_id = ? AND max_streak > 0
+                    ORDER BY max_streak DESC
+                ''', (chat_id,))
+            
+            results = []
+            for row in self.cur.fetchall():
+                results.append({
+                    'id': row[0],
+                    'game_type': row[1],
+                    'max_streak': row[2]
+                })
+            return results
+        except Exception as e:
+            print(f"Error getting win streaks: {e}")
+            return []
 
     def get_current_date(self):
         """Возвращает текущую дату в формате YYYY-MM-DD"""
@@ -211,7 +315,6 @@ class Users:
             print(f"Error getting daily stats: {e}")
             return []
 
-
     def get_weekly_stats(self, chat_id: int, week_start: str = None):
         """Получает недельную статистику"""
         if week_start is None:
@@ -276,7 +379,6 @@ class Users:
             self.database.conn.commit()
         except Exception as e: 
             raise UserError(e)
-
 
     def increment(self, table: str, id: int, chat_id: int, parameter: str):
         try:
@@ -354,7 +456,6 @@ class Users:
                          base_values['dice'],
                          base_values['dart'],
                          base_values['bask'],
-
                          base_values['foot'],
                          base_values['bowl'],
                          int(time.time()))
