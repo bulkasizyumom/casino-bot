@@ -1,5 +1,4 @@
 import json, os, time, logging
-from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.dispatcher.middlewares import BaseMiddleware
@@ -13,23 +12,13 @@ from handlers.rating import RatingHandler
 from libraries.users import Users
 from database.database import Database
 
-# ⚠️ ДИАГНОСТИКА - добавьте в самое начало
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN not found in environment variables!")
 
-print("🚀 ЗАПУСК БОТА - ДИАГНОСТИКА")
-print("=" * 50)
+print("✅ Bot token loaded successfully from environment variables")
 
-# variables
-
-load_dotenv()
-
-BOT_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
-print(f"🔐 Токен: {BOT_TOKEN[:10]}...") if BOT_TOKEN else print("❌ Токен не найден!")
-
-# СОЗДАНИЕ ОБЪЕКТА БОТА
 BOT = Bot(token=BOT_TOKEN, parse_mode='HTML')
-
 STORAGE = MemoryStorage()
 DP = Dispatcher(BOT, storage=STORAGE)
 
@@ -40,45 +29,29 @@ GAMES = {
     '🎰': {'name': 'slots', 'win': [1, 22, 43], 'jackpot': 64},
     '🏀': {'name': 'bask',  'win': [4, 5]},
     '🎯': {'name': 'dart',  'win': [6]},
-    '⚽': {'name': 'foot',  'win': [3, 5]},
+    '⚽️': {'name': 'foot',  'win': [3, 5]},
     '🎳': {'name': 'bowl',  'win': [6]},
     '🎲': {'name': 'dice',  'win': [1]},
 }
-
-print(f"🎮 Игры: {list(GAMES.keys())}")
 
 # Добавляем админов (замените на реальные ID)
 ADMIN_IDS = [1773287874, 1995856157]  # Замените на реальные ID администраторов
 for admin_id in ADMIN_IDS:
     USERS.add_admin(admin_id)
 
-print(f"👑 Админы: {ADMIN_IDS}")
-
 # user register
 
 class UserRegistrationMiddleware(BaseMiddleware):
     async def on_pre_process_message(self, message: types.Message, data: dict):
-        print(f"📨 Сообщение от {message.from_user.id}: {message.content_type}")
         if not USERS.get('users', message.from_user.id):
             USERS.add(message.from_user.id, message.from_user.full_name)
-            print(f"✅ Зарегистрирован: {message.from_user.id}")
 
 DP.middleware.setup(UserRegistrationMiddleware())
 
-# ДИАГНОСТИЧЕСКИЙ обработчик ВСЕХ сообщений
-@DP.message_handler(content_types=ContentType.ANY)
-async def debug_all_messages(message: types.Message):
-    print(f"🔍 ВСЕ СООБЩЕНИЯ:")
-    print(f"   Чат: {message.chat.id} | Пользователь: {message.from_user.id}")
-    print(f"   Тип: {message.content_type} | Текст: {message.text}")
-    if message.dice:
-        print(f"   🎲 DICE: {message.dice.emoji} = {message.dice.value}")
-    print("---")
-
 # main menu handler
+
 @DP.message_handler(commands=['casino', 'start'])
 async def main_menu(message: types.Message):
-    print(f"🎰 Команда /start от {message.from_user.id}")
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
     
@@ -98,11 +71,12 @@ async def main_menu(message: types.Message):
     )
 
 # games
+
 @DP.message_handler(commands=['games'])
 async def games(message: types.Message):
     text = f"""🎰 <b>Слоты:</b> /slots
 🎲 <b>Кубик:</b> /dice
-⚽ <b>Футбол:</b> /foot
+⚽️ <b>Футбол:</b> /foot
 🎳 <b>Боулинг:</b> /bowl
 🏀 <b>Баскетбол:</b> /bask
 🎯 <b>Дартс:</b> /dart"""
@@ -113,6 +87,7 @@ async def games(message: types.Message):
     )
 
 # info command
+
 @DP.message_handler(commands=['info'])
 async def info_command(message: types.Message):
     text = """🎰 <b>Я — Дилер. Хозяин "Подземелья", распорядитель истинных желаний.</b> 
@@ -124,7 +99,7 @@ async def info_command(message: types.Message):
 🎲 - шесть граней, шесть чисел, только 1 - победа;
 🎯 - дротиком в яблочко или на пол тряпочкой?
 🎳 - думаешь, легко получить страйк?
-⚽ - горизонтальный баскетбол; 
+⚽️ - горизонтальный баскетбол; 
 🏀 - вертикальный футбол;
 
 И не забывай: я помню ВСЁ. Каждые сутки, недели - ни одна попытка не скроется от моих глаз."""
@@ -147,6 +122,7 @@ async def admin_panel(callback: types.CallbackQuery):
     if not USERS.is_admin(callback.from_user.id):
         await callback.answer("❌ У вас нет прав администратора", show_alert=True)
         return
+
 
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('♻️ Сбросить все рейтинги', callback_data='admin-reset-all'))
@@ -215,54 +191,7 @@ async def add_admin(message: types.Message):
         await message.reply("❌ Используйте: /addadmin <user_id>")
 
 if __name__ == '__main__':
-    print("🎯 Запуск обработчиков...")
-    
-    # ДИАГНОСТИКА ПЕРЕМЕННЫХ
-    print("🔍 ПРОВЕРКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ:")
-    print(f"   BOT_TOKEN: {'✅ ЕСТЬ' if os.getenv('BOT_TOKEN') else '❌ НЕТ'}")
-    print(f"   TELEGRAM_BOT_TOKEN: {'✅ ЕСТЬ' if os.getenv('TELEGRAM_BOT_TOKEN') else '❌ НЕТ'}")
-    
-    if BOT_TOKEN:
-        print(f"   Длина токена: {len(BOT_TOKEN)} символов")
-        print(f"   Начинается с: {BOT_TOKEN[:10]}...")
-    else:
-        print("❌ Токен не найден!")
-        exit(1)
-
-    # Проверка что обработчики зарегистрированы
-    print(f"🔍 Зарегистрировано handlers: {len(DP.message_handlers.handlers)}")
-    
     MessagesHandler(DP, BOT, GAMES, USERS)
     RatingHandler(DP, BOT, USERS)
-    
-    print(f"🔍 После регистрации handlers: {len(DP.message_handlers.handlers)}")
 
-    # Проверка доступности бота
-    async def test_bot():
-        try:
-            me = await BOT.get_me()
-            print(f"✅ Бот: {me.first_name} (@{me.username}) [ID: {me.id}]")
-            return True
-        except Exception as e:
-            print(f"❌ Ошибка доступа к боту: {e}")
-            return False
-
-    # Запуск с диагностикой
-    from aiogram.utils import executor
-    import asyncio
-    
-    # Создаем event loop для теста
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    if loop.run_until_complete(test_bot()):
-        print("✅ Бот запущен! Ожидаю сообщения...")
-        print("=" * 50)
-        
-        # Очистка вебхука и очереди сообщений
-        loop.run_until_complete(BOT.delete_webhook())
-        loop.run_until_complete(BOT.get_updates(offset=-1))
-        
-        executor.start_polling(DP, skip_updates=True, allowed_updates=["message", "callback_query"])
-    else:
-        print("❌ Не удалось запустить бота. Проверьте токен.")
+    executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
