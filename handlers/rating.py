@@ -17,7 +17,7 @@ class RatingHandler:
                 InlineKeyboardButton('🎲 Кубик', callback_data='rating_game-dice')
             )
             keyboard.add(
-                InlineKeyboardButton('⚽ Футбол', callback_data='rating_game-foot'),
+                InlineKeyboardButton('⚽️ Футбол', callback_data='rating_game-foot'),
                 InlineKeyboardButton('🎳 Боулинг', callback_data='rating_game-bowl')
             )
             keyboard.add(
@@ -40,7 +40,7 @@ class RatingHandler:
             game_emojis = {
                 'slots': '🎰',
                 'dice': '🎲', 
-                'foot': '⚽',
+                'foot': '⚽️',
                 'bowl': '🎳',
                 'bask': '🏀',
                 'dart': '🎯'
@@ -81,7 +81,7 @@ class RatingHandler:
             game_emojis = {
                 'slots': '🎰',
                 'dice': '🎲',
-                'foot': '⚽',
+                'foot': '⚽️',
                 'bowl': '🎳', 
                 'bask': '🏀',
                 'dart': '🎯'
@@ -105,6 +105,7 @@ class RatingHandler:
             name = game_names.get(game, 'Слоты')
             period_name = period_names.get(period, 'сутки')
 
+
             keyboard = InlineKeyboardMarkup()
             
             # Для всех игр показываем стандартные кнопки
@@ -116,10 +117,7 @@ class RatingHandler:
             
             # Только для слотов добавляем джекпоты
             if game == 'slots':
-                keyboard.add(InlineKeyboardButton('⭐ Джекпоты', callback_data=f'rating_criteria-{game}-{period}-jackpots'))
-            
-            # Добавляем кнопку для серий выигрышей
-            keyboard.add(InlineKeyboardButton('🔥 Серии выигрышей', callback_data=f'rating_criteria-{game}-{period}-streaks'))
+                keyboard.add(InlineKeyboardButton('⭐️ Джекпоты', callback_data=f'rating_criteria-{game}-{period}-jackpots'))
             
             keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data=f'rating_game-{game}'))
 
@@ -140,7 +138,7 @@ class RatingHandler:
             game_emojis = {
                 'slots': '🎰',
                 'dice': '🎲',
-                'foot': '⚽',
+                'foot': '⚽️',
                 'bowl': '🎳',
                 'bask': '🏀',
                 'dart': '🎯'
@@ -164,8 +162,7 @@ class RatingHandler:
                 'wins': 'Выигрыши',
                 'tries': 'Попытки',
                 'winrate': 'Винрейт',
-                'jackpots': 'Джекпоты',
-                'streaks': 'Серии выигрышей'
+                'jackpots': 'Джекпоты'
             }
             
             emoji = game_emojis.get(game, '🎰')
@@ -173,12 +170,8 @@ class RatingHandler:
             period_name = period_names.get(period, 'сутки')
             criteria_name = criteria_names.get(criteria, 'Выигрыши')
 
-            # Получаем рейтинг
-            if criteria == 'streaks':
-                rating_data = self.build_streak_rating(callback.message.chat.id, game, period)
-            else:
-                rating_data = self.build_period_rating(callback.message.chat.id, game, criteria, period)
-            
+            # Получаем рейтинг из новой системы периодов
+            rating_data = self.build_period_rating(callback.message.chat.id, game, criteria, period)
             user_place = self.find_user_place(callback.from_user.id, rating_data)
 
             # Формируем текст рейтинга
@@ -189,8 +182,6 @@ class RatingHandler:
                 for i, (user_data, value) in enumerate(rating_data[:10]):  # Топ-10
                     if criteria == 'winrate':
                         value_text = f"{value:.1%}"
-                    elif criteria == 'streaks':
-                        value_text = f"{int(value)} 🔥"
                     else:
                         value_text = str(int(value))
                     
@@ -211,6 +202,7 @@ class RatingHandler:
 
             await callback.message.edit_text(text, reply_markup=keyboard)
             await callback.answer()
+
 
     def build_period_rating(self, chat_id: int, game: str, criteria: str, period: str):
         """Строит рейтинг из системы периодов"""
@@ -237,15 +229,12 @@ class RatingHandler:
                     user_stats[user_id] = {
                         'tries': 0,
                         'wins': 0,
-                        'jackpots': 0,
-                        'best_streak': 0
+                        'jackpots': 0
                     }
                 
                 user_stats[user_id]['tries'] += stat['tries']
                 user_stats[user_id]['wins'] += stat['wins']
                 user_stats[user_id]['jackpots'] += stat['jackpots']
-                # Для серий берем максимальное значение
-                user_stats[user_id]['best_streak'] = max(user_stats[user_id]['best_streak'], stat['best_streak'])
 
         # Формируем рейтинг
         for user_id, stats in user_stats.items():
@@ -257,48 +246,9 @@ class RatingHandler:
                 value = stats['jackpots']
             elif criteria == 'winrate':
                 value = stats['wins'] / stats['tries'] if stats['tries'] > 0 else 0
-            elif criteria == 'streaks':
-                value = stats['best_streak']
             else:
                 value = 0
 
-            if value > 0:
-                ranking.append(({'id': user_id, 'name': user_names.get(user_id, 'Unknown')}, value))
-
-        return sorted(ranking, key=lambda x: x[1], reverse=True)
-
-    def build_streak_rating(self, chat_id: int, game: str, period: str):
-        """Строит рейтинг по сериям выигрышей"""
-        ranking = []
-        user_names = {}
-
-        # Получаем имена пользователей
-        all_users = self.database.get_all('users')
-        for user in all_users:
-            user_names[user['id']] = user.get('name', 'Unknown')
-
-        # Получаем статистику за период
-        if period == 'day':
-            stats_data = self.database.get_daily_stats(chat_id)
-        else:  # week
-            stats_data = self.database.get_weekly_stats(chat_id)
-
-        # Группируем статистику по пользователям
-        user_stats = {}
-        for stat in stats_data:
-            if stat['game_type'] == game:
-                user_id = stat['id']
-                if user_id not in user_stats:
-                    user_stats[user_id] = {
-                        'best_streak': 0
-                    }
-                
-                # Для серий берем максимальное значение
-                user_stats[user_id]['best_streak'] = max(user_stats[user_id]['best_streak'], stat['best_streak'])
-
-        # Формируем рейтинг
-        for user_id, stats in user_stats.items():
-            value = stats['best_streak']
             if value > 0:
                 ranking.append(({'id': user_id, 'name': user_names.get(user_id, 'Unknown')}, value))
 
