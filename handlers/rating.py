@@ -63,6 +63,8 @@ class RatingHandler:
                 InlineKeyboardButton('📅 За сутки', callback_data=f'rating_period-{game}-day'),
                 InlineKeyboardButton('📅 За неделю', callback_data=f'rating_period-{game}-week')
             )
+            # 🔥 ДОБАВЛЯЕМ КНОПКУ СЕРИЙ
+            keyboard.add(InlineKeyboardButton('🔥 Серии побед', callback_data=f'rating_period-{game}-streaks'))
             keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='rating_main'))
 
             await callback.message.edit_text(
@@ -98,33 +100,43 @@ class RatingHandler:
             
             period_names = {
                 'day': 'сутки',
-                'week': 'неделю'
+                'week': 'неделю',
+                'streaks': 'серии побед'  # 🔥 НОВЫЙ ПЕРИОД
             }
             
             emoji = game_emojis.get(game, '🎰')
             name = game_names.get(game, 'Слоты')
             period_name = period_names.get(period, 'сутки')
 
-
             keyboard = InlineKeyboardMarkup()
             
-            # Для всех игр показываем стандартные кнопки
-            keyboard.add(
-                InlineKeyboardButton('✅ Выигрыши', callback_data=f'rating_criteria-{game}-{period}-wins'),
-                InlineKeyboardButton('🎯 Попытки', callback_data=f'rating_criteria-{game}-{period}-tries')
-            )
-            keyboard.add(InlineKeyboardButton('📊 Винрейт', callback_data=f'rating_criteria-{game}-{period}-winrate'))
-            
-            # Только для слотов добавляем джекпоты
-            if game == 'slots':
-                keyboard.add(InlineKeyboardButton('⭐️ Джекпоты', callback_data=f'rating_criteria-{game}-{period}-jackpots'))
-            
-            keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data=f'rating_game-{game}'))
+            if period == 'streaks':
+                # 🔥 МЕНЮ ДЛЯ СЕРИЙ ПОБЕД
+                keyboard.add(InlineKeyboardButton('🔥 Максимальные серии', callback_data=f'rating_criteria-{game}-{period}-max_streak'))
+                keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data=f'rating_game-{game}'))
+                
+                await callback.message.edit_text(
+                    f"{emoji} <b>Рейтинги {name}</b>\n📅 <b>Тип:</b> {period_name}\n\nВыберите критерий:",
+                    reply_markup=keyboard
+                )
+            else:
+                # Для всех игр показываем стандартные кнопки
+                keyboard.add(
+                    InlineKeyboardButton('✅ Выигрыши', callback_data=f'rating_criteria-{game}-{period}-wins'),
+                    InlineKeyboardButton('🎯 Попытки', callback_data=f'rating_criteria-{game}-{period}-tries')
+                )
+                keyboard.add(InlineKeyboardButton('📊 Винрейт', callback_data=f'rating_criteria-{game}-{period}-winrate'))
+                
+                # Только для слотов добавляем джекпоты
+                if game == 'slots':
+                    keyboard.add(InlineKeyboardButton('⭐️ Джекпоты', callback_data=f'rating_criteria-{game}-{period}-jackpots'))
+                
+                keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data=f'rating_game-{game}'))
 
-            await callback.message.edit_text(
-                f"{emoji} <b>Рейтинги {name}</b>\n📅 <b>Период:</b> за {period_name}\n\nВыберите критерий:",
-                reply_markup=keyboard
-            )
+                await callback.message.edit_text(
+                    f"{emoji} <b>Рейтинги {name}</b>\n📅 <b>Период:</b> за {period_name}\n\nВыберите критерий:",
+                    reply_markup=keyboard
+                )
             await callback.answer()
 
         # Отображение рейтинга
@@ -155,14 +167,16 @@ class RatingHandler:
             
             period_names = {
                 'day': 'сутки',
-                'week': 'неделю'
+                'week': 'неделю',
+                'streaks': 'серии побед'
             }
             
             criteria_names = {
                 'wins': 'Выигрыши',
                 'tries': 'Попытки',
                 'winrate': 'Винрейт',
-                'jackpots': 'Джекпоты'
+                'jackpots': 'Джекпоты',
+                'max_streak': 'Максимальные серии'  # 🔥 НОВЫЙ КРИТЕРИЙ
             }
             
             emoji = game_emojis.get(game, '🎰')
@@ -170,8 +184,12 @@ class RatingHandler:
             period_name = period_names.get(period, 'сутки')
             criteria_name = criteria_names.get(criteria, 'Выигрыши')
 
-            # Получаем рейтинг из новой системы периодов
-            rating_data = self.build_period_rating(callback.message.chat.id, game, criteria, period)
+            # Получаем рейтинг
+            if period == 'streaks':
+                rating_data = self.build_streak_rating(callback.message.chat.id, game)
+            else:
+                rating_data = self.build_period_rating(callback.message.chat.id, game, criteria, period)
+            
             user_place = self.find_user_place(callback.from_user.id, rating_data)
 
             # Формируем текст рейтинга
@@ -190,7 +208,12 @@ class RatingHandler:
                 rating_text = '\n'.join(rating_lines)
 
             title = f"{emoji} <b>РЕЙТИНГ {game_name.upper()}</b>"
-            period_info = f"📅 <b>Период:</b> за {period_name}"
+            
+            if period == 'streaks':
+                period_info = f"📅 <b>Тип:</b> {period_name}"
+            else:
+                period_info = f"📅 <b>Период:</b> за {period_name}"
+                
             criteria_info = f"📊 <b>Критерий:</b> {criteria_name}"
             user_info = f"👤 <b>Ваше место:</b> {user_place}"
 
@@ -198,11 +221,36 @@ class RatingHandler:
 
             # Клавиатура для возврата
             keyboard = InlineKeyboardMarkup()
-            keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data=f'rating_period-{game}-{period}'))
+            if period == 'streaks':
+                keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data=f'rating_period-{game}-streaks'))
+            else:
+                keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data=f'rating_period-{game}-{period}'))
 
             await callback.message.edit_text(text, reply_markup=keyboard)
             await callback.answer()
 
+    def build_streak_rating(self, chat_id: int, game: str):
+        """Строит рейтинг по максимальным сериям побед"""
+        ranking = []
+        user_names = {}
+
+        # Получаем имена пользователей
+        all_users = self.database.get_all('users')
+        for user in all_users:
+            user_names[user['id']] = user.get('name', 'Unknown')
+
+        # Получаем серии побед
+        streaks_data = self.database.get_win_streaks(chat_id, game)
+
+        # Формируем рейтинг
+        for streak in streaks_data:
+            user_id = streak['id']
+            max_streak = streak['max_streak']
+            
+            if max_streak > 0:
+                ranking.append(({'id': user_id, 'name': user_names.get(user_id, 'Unknown')}, max_streak))
+
+        return sorted(ranking, key=lambda x: x[1], reverse=True)
 
     def build_period_rating(self, chat_id: int, game: str, criteria: str, period: str):
         """Строит рейтинг из системы периодов"""
