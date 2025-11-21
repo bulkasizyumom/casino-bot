@@ -12,6 +12,7 @@ from handlers.rating import RatingHandler
 from libraries.users import Users
 from database.database import Database
 
+# 🔒 БЕЗОПАСНОЕ ПОЛУЧЕНИЕ ТОКЕНА
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN not found in environment variables!")
@@ -123,9 +124,9 @@ async def admin_panel(callback: types.CallbackQuery):
         await callback.answer("❌ У вас нет прав администратора", show_alert=True)
         return
 
-
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('♻️ Сбросить все рейтинги', callback_data='admin-reset-all'))
+    keyboard.add(InlineKeyboardButton('🔥 Сбросить серии побед', callback_data='admin-reset-streaks'))
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='back-to-main'))
 
     await callback.message.edit_text(
@@ -161,6 +162,32 @@ async def admin_reset_all_ratings(callback: types.CallbackQuery):
     
     await callback.answer()
 
+@DP.callback_query_handler(lambda c: c.data == 'admin-reset-streaks')
+async def admin_reset_streaks(callback: types.CallbackQuery):
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
+
+    success = USERS.reset_streaks(callback.message.chat.id)
+
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
+    
+    if success:
+        await callback.message.edit_text(
+            "✅ <b>Все серии побед сброшены!</b>\n\n"
+            "Теперь игроки могут начать новые серии с чистого листа.",
+            reply_markup=keyboard
+        )
+    else:
+        await callback.message.edit_text(
+            "❌ <b>Ошибка при сбросе серий</b>\n\n"
+            "Попробуйте позже или проверьте логи.",
+            reply_markup=keyboard
+        )
+    
+    await callback.answer()
+
 @DP.callback_query_handler(lambda c: c.data == 'back-to-main')
 async def back_to_main(callback: types.CallbackQuery):
     await main_menu(callback.message)
@@ -168,13 +195,14 @@ async def back_to_main(callback: types.CallbackQuery):
 @DP.message_handler(commands=['congratulate'])
 async def congratulate(message: types.Message):
     user = USERS.get('users', message.from_user.id)
-    USERS.set('users', message.from_user.id, None, 'congratulate', False if user['congratulate'] else True)
+    if user:
+        USERS.set('users', message.from_user.id, None, 'congratulate', False if user['congratulate'] else True)
 
-    await BOT.send_message(
-        message.chat.id,
-        f'✅ <b>Настройка сохранена</b>\n<i>Переключено на <b>{"ДА" if not user["congratulate"] else "НЕТ"}</b></i>',
-        message_thread_id=message.message_thread_id
-    )
+        await BOT.send_message(
+            message.chat.id,
+            f'✅ <b>Настройка сохранена</b>\n<i>Переключено на <b>{"ДА" if not user["congratulate"] else "НЕТ"}</b></i>',
+            message_thread_id=message.message_thread_id
+        )
 
 # Команда для добавления админов
 @DP.message_handler(commands=['addadmin'])
@@ -190,8 +218,46 @@ async def add_admin(message: types.Message):
     except ValueError:
         await message.reply("❌ Используйте: /addadmin <user_id>")
 
+# Команда для проверки текущей серии
+@DP.message_handler(commands=['mystreak'])
+async def my_streak(message: types.Message):
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    
+    text_lines = ["🔥 <b>Ваши текущие серии побед:</b>\n"]
+    
+    games_list = ['slots', 'dice', 'foot', 'bowl', 'bask', 'dart']
+    has_streaks = False
+    
+    for game in games_list:
+        streaks_data = USERS.get_win_streaks(chat_id, game)
+        for streak in streaks_data:
+            if streak['id'] == user_id and streak['max_streak'] > 0:
+                game_names = {
+                    'slots': '🎰 Слоты',
+                    'dice': '🎲 Кубик',
+                    'foot': '⚽️ Футбол',
+                    'bowl': '🎳 Боулинг',
+                    'bask': '🏀 Баскетбол',
+                    'dart': '🎯 Дартс'
+                }
+                text_lines.append(f"{game_names.get(game, game)}: <b>{streak['max_streak']}</b>")
+                has_streaks = True
+    
+    if not has_streaks:
+        text_lines.append("\n📊 <i>У вас пока нет серий побед</i>")
+    
+    await BOT.send_message(
+        message.chat.id,
+        '\n'.join(text_lines),
+        message_thread_id=message.message_thread_id
+    )
+
 if __name__ == '__main__':
     MessagesHandler(DP, BOT, GAMES, USERS)
     RatingHandler(DP, BOT, USERS)
 
+    print("🤖 Бот запущен и работает...")
+    print("Для остановки нажми Ctrl+C")
+    
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
