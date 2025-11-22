@@ -69,8 +69,11 @@ async def main_menu(message: types.Message):
     )
 
     keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton('📊 Статистика', callback_data='stats'))
-    keyboard.add(InlineKeyboardButton('🏆 Рейтинг', callback_data='rating_main'))
+    keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
+    
+    # Добавляем кнопку для админов
+    if USERS.is_admin(message.from_user.id):
+        keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
 
     await BOT.send_message(
         message.chat.id,
