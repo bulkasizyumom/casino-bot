@@ -48,15 +48,16 @@ for admin_id in ADMIN_IDS:
     USERS.add_admin(admin_id)
 
 # user register
+
 class UserRegistrationMiddleware(BaseMiddleware):
     async def on_pre_process_message(self, message: types.Message, data: dict):
-        # Регистрируем пользователя на ЛЮБОЕ сообщение (включая dice)
-        if message.from_user and not USERS.get('users', message.from_user.id):
+        if not USERS.get('users', message.from_user.id):
             USERS.add(message.from_user.id, message.from_user.full_name)
 
 DP.middleware.setup(UserRegistrationMiddleware())
 
 # main menu handler
+
 @DP.message_handler(commands=['casino', 'start'])
 async def main_menu(message: types.Message):
     # 🔥 ЛОГИРУЕМ КОМАНДЫ /start И /casino
@@ -66,13 +67,10 @@ async def main_menu(message: types.Message):
         f"Name={message.from_user.full_name}, "
         f"Command={message.text}"
     )
-    
+
     keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
-    
-    # Добавляем кнопку для админов
-    if USERS.is_admin(message.from_user.id):
-        keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
+    keyboard.add(InlineKeyboardButton('📊 Статистика', callback_data='stats'))
+    keyboard.add(InlineKeyboardButton('🏆 Рейтинг', callback_data='rating_main'))
 
     await BOT.send_message(
         message.chat.id,
@@ -85,7 +83,187 @@ async def main_menu(message: types.Message):
         reply_markup=keyboard
     )
 
-# ... ВСЕ ОСТАЛЬНЫЕ ФУНКЦИИ БЕЗ ИЗМЕНЕНИЙ ...
+# games
+
+@DP.message_handler(commands=['games'])
+async def games(message: types.Message):
+    text = f"""🎰 <b>Слоты:</b> /slots
+🎲 <b>Кубик:</b> /dice
+⚽️ <b>Футбол:</b> /foot
+🎳 <b>Боулинг:</b> /bowl
+🏀 <b>Баскетбол:</b> /bask
+🎯 <b>Дартс:</b> /dart"""
+
+    await BOT.send_message(
+        message.chat.id, text,
+        message_thread_id = message.message_thread_id
+    )
+
+# info command
+
+@DP.message_handler(commands=['info'])
+async def info_command(message: types.Message):
+    text = """🎰 <b>Я — Дилер. Хозяин "Подземелья", распорядитель истинных желаний.</b> 
+
+Я — причина, по которой вашего времени становится меньше. Удача любит смелых, а я... их проигрыши.
+
+<b>ВАРИАНТЫ:</b>
+🎰 - собери три одинаковых знака, если хватит терпения;
+🎲 - шесть граней, шесть чисел, только 1 - победа;
+🎯 - дротиком в яблочко или на пол тряпочкой?
+🎳 - думаешь, легко получить страйк?
+⚽️ - горизонтальный баскетбол; 
+🏀 - вертикальный футбол;
+
+И не забывай: я помню ВСЁ. Каждые сутки, недели - ни одна попытка не скроется от моих глаз."""
+
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
+    
+    if USERS.is_admin(message.from_user.id):
+        keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
+
+    await BOT.send_message(
+        message.chat.id, text,
+        message_thread_id=message.message_thread_id,
+        reply_markup=keyboard
+    )
+
+# Админ панель
+@DP.callback_query_handler(lambda c: c.data == 'admin')
+async def admin_panel(callback: types.CallbackQuery):
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
+
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton('♻️ Сбросить все рейтинги', callback_data='admin-reset-all'))
+    keyboard.add(InlineKeyboardButton('🔥 Сбросить серии побед', callback_data='admin-reset-streaks'))
+    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='back-to-main'))
+
+    await callback.message.edit_text(
+        "⚙️ <b>Панель администратора</b>\nВыберите действие:",
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+@DP.callback_query_handler(lambda c: c.data == 'admin-reset-all')
+async def admin_reset_all_ratings(callback: types.CallbackQuery):
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
+
+    # Используем метод из Users для сброса всей статистики
+    success = USERS.reset_all_stats()
+
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
+    
+    if success:
+        await callback.message.edit_text(
+            "✅ <b>Все рейтинги успешно сброшены!</b>\n\n"
+            "Вся статистика обнулена. Теперь можно начинать новую статистику с чистого листа.",
+            reply_markup=keyboard
+        )
+    else:
+        await callback.message.edit_text(
+            "❌ <b>Ошибка при сбросе рейтингов</b>\n\n"
+            "Попробуйте позже или проверьте логи.",
+            reply_markup=keyboard
+        )
+    
+    await callback.answer()
+
+@DP.callback_query_handler(lambda c: c.data == 'admin-reset-streaks')
+async def admin_reset_streaks(callback: types.CallbackQuery):
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
+
+    success = USERS.reset_streaks(callback.message.chat.id)
+
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
+    
+    if success:
+        await callback.message.edit_text(
+            "✅ <b>Все серии побед сброшены!</b>\n\n"
+            "Теперь игроки могут начать новые серии с чистого листа.",
+            reply_markup=keyboard
+        )
+    else:
+        await callback.message.edit_text(
+            "❌ <b>Ошибка при сбросе серий</b>\n\n"
+            "Попробуйте позже или проверьте логи.",
+            reply_markup=keyboard
+        )
+    
+    await callback.answer()
+
+@DP.callback_query_handler(lambda c: c.data == 'back-to-main')
+async def back_to_main(callback: types.CallbackQuery):
+    await main_menu(callback.message)
+
+@DP.message_handler(commands=['congratulate'])
+async def congratulate(message: types.Message):
+    user = USERS.get('users', message.from_user.id)
+    if user:
+        USERS.set('users', message.from_user.id, None, 'congratulate', False if user['congratulate'] else True)
+
+        await BOT.send_message(
+            message.chat.id,
+            f'✅ <b>Настройка сохранена</b>\n<i>Переключено на <b>{"ДА" if not user["congratulate"] else "НЕТ"}</b></i>',
+            message_thread_id=message.message_thread_id
+        )
+
+# Команда для добавления админов
+@DP.message_handler(commands=['addadmin'])
+async def add_admin(message: types.Message):
+    # Только существующие админы могут добавлять новых
+    if not USERS.is_admin(message.from_user.id):
+        return
+
+    try:
+        user_id = int(message.get_args())
+        USERS.add_admin(user_id)
+        await message.reply(f"✅ Пользователь {user_id} добавлен как администратор")
+    except ValueError:
+        await message.reply("❌ Используйте: /addadmin <user_id>")
+
+# Команда для проверки текущей серии
+@DP.message_handler(commands=['mystreak'])
+async def my_streak(message: types.Message):
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    
+    text_lines = ["🔥 <b>Ваши текущие серии побед:</b>\n"]
+    
+    games_list = ['slots', 'dice', 'foot', 'bowl', 'bask', 'dart']
+    has_streaks = False
+    
+    for game in games_list:
+        streaks_data = USERS.get_win_streaks(chat_id, game)
+        for streak in streaks_data:
+            if streak['id'] == user_id and streak['max_streak'] > 0:
+                game_names = {
+                    'slots': '🎰 Слоты',
+                    'dice': '🎲 Кубик',
+                    'foot': '⚽️ Футбол',
+                    'bowl': '🎳 Боулинг',
+                    'bask': '🏀 Баскетбол',
+                    'dart': '🎯 Дартс'
+                }
+                text_lines.append(f"{game_names.get(game, game)}: <b>{streak['max_streak']}</b>")
+                has_streaks = True
+    
+    if not has_streaks:
+        text_lines.append("\n📊 <i>У вас пока нет серий побед</i>")
+    
+    await BOT.send_message(
+        message.chat.id,
+        '\n'.join(text_lines),
+        message_thread_id=message.message_thread_id
+    )
 
 if __name__ == '__main__':
     MessagesHandler(DP, BOT, GAMES, USERS)
