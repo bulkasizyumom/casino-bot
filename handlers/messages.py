@@ -16,6 +16,9 @@ class MessagesHandler:
         self.last_dice_time = {}  # Словарь для хранения времени последнего депа по пользователям
     
     def register(self, dp, bot, games: dict, database: Users):
+        # 🔥 ID пользователя с особым анти-спамом
+        SPECIAL_USER_ID = 751379478  # ЗАМЕНИ НА РЕАЛЬНЫЙ ID
+        
         async def process_dice(message: types.Message, emoji: str, value: int, user: int):
             # 🔥 РЕГИСТРИРУЕМ ПОЛЬЗОВАТЕЛЯ ЕСЛИ ЕГО НЕТ
             if not database.get('users', user):
@@ -25,19 +28,28 @@ class MessagesHandler:
             if message.forward_date:
                 return  # Игнорируем пересланные сообщения
 
-            # Проверяем анти-спам защиту (минимум 0.3 секунды между депами)
+            # Проверяем анти-спам защиту
             current_time = time.time()
             user_key = f"{user}_{message.chat.id}"
             
             if user_key in self.last_dice_time:
                 time_diff = current_time - self.last_dice_time[user_key]
-                if time_diff < 0.3:  # Меньше 0.3 секунды
+                
+                # 🔥 ОСОБЫЙ АНТИ-СПАМ ДЛЯ КОНКРЕТНОГО ПОЛЬЗОВАТЕЛЯ
+                if user == SPECIAL_USER_ID:
+                    spam_threshold = 3.0  # 3 секунды для особого пользователя
+                else:
+                    spam_threshold = 0.3  # 0.3 секунды для всех остальных
+                
+                if time_diff < spam_threshold:
                     # 🔥 ЛОГИРУЕМ АНТИ-СПАМ
+                    user_type = "ОСОБЫЙ" if user == SPECIAL_USER_ID else "ОБЫЧНЫЙ"
                     logger.warning(
-                        f"🚫 АНТИ-СПАМ: "
+                        f"🚫 АНТИ-СПАМ ({user_type}): "
                         f"UserID={user}, "
                         f"Name={message.from_user.full_name}, "
-                        f"TimeDiff={time_diff:.3f}s"
+                        f"TimeDiff={time_diff:.3f}s, "
+                        f"Threshold={spam_threshold}s"
                     )
                     return  # Игнорируем слишком частые депы
             
@@ -131,13 +143,22 @@ class MessagesHandler:
             
             if user_key in self.last_dice_time:
                 time_diff = current_time - self.last_dice_time[user_key]
-                if time_diff < 0.3:  # Меньше 0.3 секунды
+                
+                # 🔥 ОСОБЫЙ АНТИ-СПАМ ДЛЯ КОНКРЕТНОГО ПОЛЬЗОВАТЕЛЯ
+                if message.from_user.id == SPECIAL_USER_ID:
+                    spam_threshold = 3.0  # 3 секунды для особого пользователя
+                else:
+                    spam_threshold = 0.3  # 0.3 секунды для всех остальных
+                
+                if time_diff < spam_threshold:
                     # 🔥 ЛОГИРУЕМ АНТИ-СПАМ ДЛЯ КОМАНД
+                    user_type = "ОСОБЫЙ" if message.from_user.id == SPECIAL_USER_ID else "ОБЫЧНЫЙ"
                     logger.warning(
-                        f"🚫 АНТИ-СПАМ КОМАНДА: "
+                        f"🚫 АНТИ-СПАМ КОМАНДА ({user_type}): "
                         f"UserID={message.from_user.id}, "
                         f"Name={message.from_user.full_name}, "
-                        f"TimeDiff={time_diff:.3f}s"
+                        f"TimeDiff={time_diff:.3f}s, "
+                        f"Threshold={spam_threshold}s"
                     )
                     await message.reply("⏳ <b>Слишком быстро!</b> Подождите немного перед следующим броском.")
                     return
