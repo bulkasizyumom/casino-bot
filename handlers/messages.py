@@ -17,24 +17,42 @@ class MessagesHandler:
     
     def register(self, dp, bot, games: dict, database: Users):
         # 🔥 РАЗДЕЛЬНЫЕ СПИСКИ:
-        BLOCKED_USER_IDS = [1773287874]  # ПОЛНОСТЬЮ ЗАБЛОКИРОВАННЫЕ
+        BLOCKED_USER_IDS = [1014610866, 751379478]  # ПОЛНОСТЬЮ ЗАБЛОКИРОВАННЫЕ
         SLOW_USER_IDS = []  # пользователи с ограничением 3 сек (добавь нужные ID)
         
-        async def process_dice(message: types.Message, emoji: str, value: int, user: int):
-            # 🔥 ПРОВЕРЯЕМ НА БЛОКИРОВКУ
-            if user in BLOCKED_USER_IDS:
-                logger.warning(
-                    f"🚫 БЛОКИРОВКА DICE: "
-                    f"UserID={user}, "
-                    f"Name={message.from_user.full_name}"
-                )
-                # Удаляем сообщение с эмодзи
+        # 🔥 САМЫЙ ПЕРВЫЙ ХЕНДЛЕР - БЛОКИРОВКА ВСЕХ СООБЩЕНИЙ
+        @dp.message_handler(lambda message: message.from_user.id in BLOCKED_USER_IDS)
+        async def handle_blocked_users(message: types.Message):
+            """Блокирует ВСЕ сообщения от заблокированных пользователей"""
+            logger.warning(
+                f"🚫 ПОЛНАЯ БЛОКИРОВКА: "
+                f"UserID={message.from_user.id}, "
+                f"Name={message.from_user.full_name}, "
+                f"ContentType={message.content_type}"
+            )
+            
+            # Для dice сообщений пытаемся удалить
+            if message.content_type == ContentType.DICE:
                 try:
                     await message.delete()
-                except:
-                    pass  # Если нет прав на удаление - игнорируем
-                return  # Полностью блокируем обработку
+                    logger.info(f"✅ Удалено dice сообщение от {message.from_user.id}")
+                except Exception as e:
+                    logger.error(f"❌ Не удалось удалить dice: {e}")
+            
+            # Для текстовых сообщений отправляем предупреждение и удаляем
+            elif message.content_type == ContentType.TEXT:
+                try:
+                    warning_msg = await message.reply("❌ <b>Ваш доступ к боту ограничен</b>")
+                    await message.delete()
+                    # Удаляем предупреждение через 5 секунд
+                    await asyncio.sleep(5)
+                    await warning_msg.delete()
+                except Exception as e:
+                    logger.error(f"❌ Не удалось обработать текстовое сообщение: {e}")
+            
+            return  # Полностью прекращаем обработку
 
+        async def process_dice(message: types.Message, emoji: str, value: int, user: int):
             # 🔥 РЕГИСТРИРУЕМ ПОЛЬЗОВАТЕЛЯ ЕСЛИ ЕГО НЕТ
             if not database.get('users', user):
                 database.add(user, message.from_user.full_name)
@@ -135,23 +153,6 @@ class MessagesHandler:
             if is_win and database.get('users', user).get('congratulate'):
                 await congratulate()
 
-        # 🔥 ДОБАВЛЯЕМ ОБЩИЙ ХЕНДЛЕР ДЛЯ ВСЕХ СООБЩЕНИЙ ОТ ЗАБЛОКИРОВАННЫХ
-        @dp.message_handler(lambda message: message.from_user.id in BLOCKED_USER_IDS)
-        async def handle_blocked_users(message: types.Message):
-            """Блокирует ВСЕ сообщения от заблокированных пользователей"""
-            logger.warning(
-                f"🚫 ПОЛНАЯ БЛОКИРОВКА: "
-                f"UserID={message.from_user.id}, "
-                f"Name={message.from_user.full_name}, "
-                f"ContentType={message.content_type}"
-            )
-            # Удаляем любое сообщение от заблокированного пользователя
-            try:
-                await message.delete()
-            except Exception as e:
-                logger.error(f"Не удалось удалить сообщение: {e}")
-            return  # Полностью прекращаем обработку
-
         @dp.message_handler(content_types=ContentType.DICE)
         async def handle_dice(message: types.Message):
             # Проверяем, что сообщение не переслано
@@ -207,5 +208,4 @@ class MessagesHandler:
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
             await process_dice(dice_message, emoji, dice_message.dice.value, message.from_user.id)
-
 
