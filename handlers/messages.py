@@ -23,58 +23,50 @@ class MessagesHandler:
         # 🔥 ИГРОВЫЕ ЭМОДЗИ КОТОРЫЕ БЛОКИРУЕМ
         GAME_EMOJIS = ['🎰', '🎲', '🏀', '🎯', '⚽', '🎳']  # Все игровые эмодзи
         
-        # 🔥 САМЫЙ ПЕРВЫЙ ХЕНДЛЕР - БЛОКИРОВКА ВСЕХ СООБЩЕНИЙ
+        # 🔥 САМЫЙ ПЕРВЫЙ ХЕНДЛЕР - БЛОКИРОВКА ВСЕХ СООБЩЕНИЙ ОТ ЗАБЛОКИРОВАННЫХ
         @dp.message_handler(lambda message: message.from_user.id in BLOCKED_USER_IDS)
         async def handle_blocked_users(message: types.Message):
             """Блокирует ВСЕ сообщения от заблокированных пользователей"""
             
-            # 🔥 ПРОВЕРЯЕМ КОНКРЕТНЫЕ ТИПЫ СООБЩЕНИЙ ДЛЯ БЛОКИРОВКИ
-            should_block = False
             block_reason = ""
             
-            # 1. Блокируем игровые эмодзи (dice)
+            # Определяем тип контента для логирования
             if message.content_type == ContentType.DICE and message.dice:
                 if message.dice.emoji in GAME_EMOJIS:
-                    should_block = True
                     block_reason = f"игровой эмодзи {message.dice.emoji}"
-            
-            # 2. Блокируем стикеры
+                else:
+                    block_reason = f"эмодзи {message.dice.emoji}"
             elif message.content_type == ContentType.STICKER:
-                should_block = True
                 block_reason = "стикер"
-            
-            # 3. Блокируем GIF (анимации)
             elif message.content_type == ContentType.ANIMATION:
-                should_block = True
                 block_reason = "GIF"
-            
-            # 4. Блокируем текстовые сообщения с игровыми командами
             elif message.content_type == ContentType.TEXT:
                 if message.text and message.text.startswith('/'):
                     command = message.text.lstrip('/').split(' ')[0]
                     if command in ['dice', 'slots', 'bask', 'dart', 'foot', 'bowl']:
-                        should_block = True
                         block_reason = f"игровая команда /{command}"
+                    else:
+                        block_reason = f"команда /{command}"
+                else:
+                    block_reason = "текстовое сообщение"
+            else:
+                block_reason = f"тип {message.content_type}"
             
-            # 🔥 ЕСЛИ НАДО БЛОКИРОВАТЬ - УДАЛЯЕМ И ЛОГИРУЕМ
-            if should_block:
-                logger.warning(
-                    f"🚫 БЛОКИРОВКА: "
-                    f"UserID={message.from_user.id}, "
-                    f"Name={message.from_user.full_name}, "
-                    f"Тип: {block_reason}"
-                )
-                
-                try:
-                    await message.delete()
-                    logger.info(f"✅ Удалено сообщение от {message.from_user.id}, причина: {block_reason}")
-                except Exception as e:
-                    logger.error(f"❌ Не удалось удалить сообщение: {e}")
-                
-                return  # Полностью прекращаем обработку
+            logger.warning(
+                f"🚫 БЛОКИРОВКА: "
+                f"UserID={message.from_user.id}, "
+                f"Name={message.from_user.full_name}, "
+                f"Тип: {block_reason}"
+            )
             
-            # Если это не игровой контент - пропускаем (пользователь может общаться текстом)
-            return
+            # 🔥 УДАЛЯЕМ ЛЮБОЕ СООБЩЕНИЕ ОТ ЗАБЛОКИРОВАННОГО ПОЛЬЗОВАТЕЛЯ
+            try:
+                await message.delete()
+                logger.info(f"✅ Удалено сообщение от {message.from_user.id}, причина: {block_reason}")
+            except Exception as e:
+                logger.error(f"❌ Не удалось удалить сообщение: {e}")
+            
+            return  # Полностью прекращаем обработку
 
         async def process_dice(message: types.Message, emoji: str, value: int, user: int):
             # 🔥 РЕГИСТРИРУЕМ ПОЛЬЗОВАТЕЛЯ ЕСЛИ ЕГО НЕТ
@@ -232,4 +224,7 @@ class MessagesHandler:
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
             await process_dice(dice_message, emoji, dice_message.dice.value, message.from_user.id)
+            dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
+            await process_dice(dice_message, emoji, dice_message.dice.value, message.from_user.id)
+
 
