@@ -17,8 +17,8 @@ class MessagesHandler:
     
     def register(self, dp, bot, games: dict, database: Users):
         # 🔥 РАЗДЕЛЬНЫЕ СПИСКИ:
-        BLOCKED_USER_IDS = [1014610866,1995856157]  # ПОЛНОСТЬЮ ЗАБЛОКИРОВАННЫЕ
-        SLOW_USER_IDS = [751379478]  # пользователи с ограничением 3 сек (добавь нужные ID)
+        BLOCKED_USER_IDS = [751379478]  # ПОЛНОСТЬЮ ЗАБЛОКИРОВАННЫЕ
+        SLOW_USER_IDS = [1014610866]  # пользователи с ограничением 3 сек (добавь нужные ID)
         
         async def process_dice(message: types.Message, emoji: str, value: int, user: int):
             # 🔥 ПРОВЕРЯЕМ НА БЛОКИРОВКУ
@@ -207,3 +207,4 @@ class MessagesHandler:
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
             await process_dice(dice_message, emoji, dice_message.dice.value, message.from_user.id)
+
