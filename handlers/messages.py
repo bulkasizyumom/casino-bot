@@ -31,24 +31,12 @@ class MessagesHandler:
                 f"ContentType={message.content_type}"
             )
             
-            # Для dice сообщений пытаемся удалить
-            if message.content_type == ContentType.DICE:
-                try:
-                    await message.delete()
-                    logger.info(f"✅ Удалено dice сообщение от {message.from_user.id}")
-                except Exception as e:
-                    logger.error(f"❌ Не удалось удалить dice: {e}")
-            
-            # Для текстовых сообщений отправляем предупреждение и удаляем
-            elif message.content_type == ContentType.TEXT:
-                try:
-                    warning_msg = await message.reply("❌ <b>Ваш доступ к боту ограничен</b>")
-                    await message.delete()
-                    # Удаляем предупреждение через 5 секунд
-                    await asyncio.sleep(5)
-                    await warning_msg.delete()
-                except Exception as e:
-                    logger.error(f"❌ Не удалось обработать текстовое сообщение: {e}")
+            # 🔥 ТИХО УДАЛЯЕМ ЛЮБОЕ СООБЩЕНИЕ (эмодзи, текст, команды)
+            try:
+                await message.delete()
+                logger.info(f"✅ Удалено сообщение от {message.from_user.id}, тип: {message.content_type}")
+            except Exception as e:
+                logger.error(f"❌ Не удалось удалить сообщение: {e}")
             
             return  # Полностью прекращаем обработку
 
@@ -208,5 +196,4 @@ class MessagesHandler:
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
             await process_dice(dice_message, emoji, dice_message.dice.value, message.from_user.id)
-
 
