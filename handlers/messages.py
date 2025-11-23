@@ -16,10 +16,24 @@ class MessagesHandler:
         self.last_dice_time = {}  # Словарь для хранения времени последнего депа по пользователям
     
     def register(self, dp, bot, games: dict, database: Users):
-        # 🔥 ID пользователя с особым анти-спамом
-        SPECIAL_USER_ID = 751379478  # ЗАМЕНИ НА РЕАЛЬНЫЙ ID
+        # 🔥 СПИСОК ЗАБЛОКИРОВАННЫХ пользователей
+        BLOCKED_USER_IDS = [1014610866,751379478]  # ЗАМЕНИ НА РЕАЛЬНЫЕ ID
         
         async def process_dice(message: types.Message, emoji: str, value: int, user: int):
+            # 🔥 ПРОВЕРЯЕМ НА БЛОКИРОВКУ
+            if user in BLOCKED_USER_IDS:
+                logger.warning(
+                    f"🚫 БЛОКИРОВКА DICE: "
+                    f"UserID={user}, "
+                    f"Name={message.from_user.full_name}"
+                )
+                # Удаляем сообщение с эмодзи
+                try:
+                    await message.delete()
+                except:
+                    pass  # Если нет прав на удаление - игнорируем
+                return  # Полностью блокируем обработку
+
             # 🔥 РЕГИСТРИРУЕМ ПОЛЬЗОВАТЕЛЯ ЕСЛИ ЕГО НЕТ
             if not database.get('users', user):
                 database.add(user, message.from_user.full_name)
@@ -35,15 +49,15 @@ class MessagesHandler:
             if user_key in self.last_dice_time:
                 time_diff = current_time - self.last_dice_time[user_key]
                 
-                # 🔥 ОСОБЫЙ АНТИ-СПАМ ДЛЯ КОНКРЕТНОГО ПОЛЬЗОВАТЕЛЯ
-                if user == SPECIAL_USER_ID:
-                    spam_threshold = 3.0  # 3 секунды для особого пользователя
+                # 🔥 ОСОБЫЙ АНТИ-СПАМ ДЛЯ КОНКРЕТНЫХ ПОЛЬЗОВАТЕЛЕЙ
+                if user in BLOCKED_USER_IDS:
+                    spam_threshold = 3.0  # 3 секунды для особых пользователей
                 else:
                     spam_threshold = 0.3  # 0.3 секунды для всех остальных
                 
                 if time_diff < spam_threshold:
                     # 🔥 ЛОГИРУЕМ АНТИ-СПАМ
-                    user_type = "ОСОБЫЙ" if user == SPECIAL_USER_ID else "ОБЫЧНЫЙ"
+                    user_type = "ОСОБЫЙ" if user in BLOCKED_USER_IDS else "ОБЫЧНЫЙ"
                     logger.warning(
                         f"🚫 АНТИ-СПАМ ({user_type}): "
                         f"UserID={user}, "
@@ -122,6 +136,20 @@ class MessagesHandler:
 
         @dp.message_handler(content_types=ContentType.DICE)
         async def handle_dice(message: types.Message):
+            # 🔥 ПРОВЕРЯЕМ НА БЛОКИРОВКУ ПЕРЕД ОБРАБОТКОЙ
+            if message.from_user.id in BLOCKED_USER_IDS:
+                logger.warning(
+                    f"🚫 БЛОКИРОВКА DICE ХЕНДЛЕР: "
+                    f"UserID={message.from_user.id}, "
+                    f"Name={message.from_user.full_name}"
+                )
+                # Удаляем сообщение с эмодзи
+                try:
+                    await message.delete()
+                except:
+                    pass  # Если нет прав на удаление - игнорируем
+                return  # Полностью блокируем обработку
+
             # Проверяем, что сообщение не переслано
             if message.forward_date:
                 return  # Игнорируем пересланные dice
@@ -133,6 +161,17 @@ class MessagesHandler:
 
         @dp.message_handler(commands=['dice', 'slots', 'bask', 'dart', 'foot', 'bowl'])
         async def roll_dice(message: types.Message):
+            # 🔥 ПРОВЕРЯЕМ НА БЛОКИРОВКУ ПЕРЕД КОМАНДАМИ
+            if message.from_user.id in BLOCKED_USER_IDS:
+                logger.warning(
+                    f"🚫 БЛОКИРОВКА КОМАНДА: "
+                    f"UserID={message.from_user.id}, "
+                    f"Name={message.from_user.full_name}, "
+                    f"Command={message.text}"
+                )
+                await message.reply("❌ <b>Ваш доступ к играм ограничен</b>")
+                return  # Блокируем команды
+
             # Проверяем, что команда не из пересланного сообщения
             if message.forward_date:
                 return  # Игнорируем команды из пересланных сообщений
@@ -144,15 +183,15 @@ class MessagesHandler:
             if user_key in self.last_dice_time:
                 time_diff = current_time - self.last_dice_time[user_key]
                 
-                # 🔥 ОСОБЫЙ АНТИ-СПАМ ДЛЯ КОНКРЕТНОГО ПОЛЬЗОВАТЕЛЯ
-                if message.from_user.id == SPECIAL_USER_ID:
-                    spam_threshold = 3.0  # 3 секунды для особого пользователя
+                # 🔥 ОСОБЫЙ АНТИ-СПАМ ДЛЯ КОНКРЕТНЫХ ПОЛЬЗОВАТЕЛЕЙ
+                if message.from_user.id in BLOCKED_USER_IDS:
+                    spam_threshold = 3.0  # 3 секунды для особых пользователей
                 else:
                     spam_threshold = 0.3  # 0.3 секунды для всех остальных
                 
                 if time_diff < spam_threshold:
                     # 🔥 ЛОГИРУЕМ АНТИ-СПАМ ДЛЯ КОМАНД
-                    user_type = "ОСОБЫЙ" if message.from_user.id == SPECIAL_USER_ID else "ОБЫЧНЫЙ"
+                    user_type = "ОСОБЫЙ" if message.from_user.id in BLOCKED_USER_IDS else "ОБЫЧНЫЙ"
                     logger.warning(
                         f"🚫 АНТИ-СПАМ КОМАНДА ({user_type}): "
                         f"UserID={message.from_user.id}, "
