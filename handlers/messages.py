@@ -69,17 +69,36 @@ class MessagesHandler:
                     logger.error(f"❌ Не удалось удалить {content_type}: {e}")
                 return
 
-        # 🔥 ХЕНДЛЕР ДЛЯ ТЕКСТА И КОМАНД С ПРОВЕРКОЙ НА БЛОКИРОВКУ
+        # 🔥 ХЕНДЛЕР ДЛЯ КОМАНД /start И /casino С ПРОВЕРКОЙ НА БЛОКИРОВКУ
+        @dp.message_handler(commands=['start', 'casino'])
+        async def handle_start_casino_with_block(message: types.Message):
+            if message.from_user.id in BLOCKED_USER_IDS:
+                logger.warning(
+                    f"🚫 БЛОКИРОВКА КОМАНДА: "
+                    f"UserID={message.from_user.id}, "
+                    f"Name={message.from_user.full_name}, "
+                    f"Command={message.text}"
+                )
+                
+                try:
+                    await message.delete()
+                    logger.info(f"✅ Удалена команда от {message.from_user.id}, команда: {message.text}")
+                except Exception as e:
+                    logger.error(f"❌ Не удалось удалить команду: {e}")
+                return
+            
+            # 🔥 ЕСЛИ НЕ ЗАБЛОКИРОВАН - ВЫЗЫВАЕМ ОРИГИНАЛЬНЫЙ ОБРАБОТЧИК ИЗ main.py
+            from main import main_menu
+            await main_menu(message)
+
+        # 🔥 ХЕНДЛЕР ДЛЯ ОСТАЛЬНОГО ТЕКСТА С ПРОВЕРКОЙ НА БЛОКИРОВКУ
         @dp.message_handler(content_types=ContentType.TEXT)
         async def handle_text_with_block(message: types.Message):
             if message.from_user.id in BLOCKED_USER_IDS:
                 block_reason = "текстовое сообщение"
                 if message.text and message.text.startswith('/'):
                     command = message.text.lstrip('/').split(' ')[0]
-                    if command in ['dice', 'slots', 'bask', 'dart', 'foot', 'bowl']:
-                        block_reason = f"игровая команда /{command}"
-                    else:
-                        block_reason = f"команда /{command}"
+                    block_reason = f"команда /{command}"
                 
                 logger.warning(
                     f"🚫 БЛОКИРОВКА ТЕКСТ: "
@@ -240,5 +259,4 @@ class MessagesHandler:
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
             await process_dice(dice_message, emoji, dice_message.dice.value, message.from_user.id)
-
 
