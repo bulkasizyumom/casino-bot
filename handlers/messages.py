@@ -23,50 +23,77 @@ class MessagesHandler:
         # 🔥 ИГРОВЫЕ ЭМОДЗИ КОТОРЫЕ БЛОКИРУЕМ
         GAME_EMOJIS = ['🎰', '🎲', '🏀', '🎯', '⚽', '🎳']  # Все игровые эмодзи
         
-        # 🔥 САМЫЙ ПЕРВЫЙ ХЕНДЛЕР - БЛОКИРОВКА ВСЕХ СООБЩЕНИЙ ОТ ЗАБЛОКИРОВАННЫХ
-        @dp.message_handler(lambda message: message.from_user.id in BLOCKED_USER_IDS)
-        async def handle_blocked_users(message: types.Message):
-            """Блокирует ВСЕ сообщения от заблокированных пользователей"""
+        # 🔥 ХЕНДЛЕР ДЛЯ DICE С ПРОВЕРКОЙ НА БЛОКИРОВКУ (ВЫСОКИЙ ПРИОРИТЕТ)
+        @dp.message_handler(content_types=ContentType.DICE)
+        async def handle_dice_with_block(message: types.Message):
+            # 🔥 ПЕРВОЕ - ПРОВЕРЯЕМ БЛОКИРОВКУ
+            if message.from_user.id in BLOCKED_USER_IDS:
+                logger.warning(
+                    f"🚫 БЛОКИРОВКА DICE: "
+                    f"UserID={message.from_user.id}, "
+                    f"Name={message.from_user.full_name}, "
+                    f"Emoji={message.dice.emoji if message.dice else 'None'}"
+                )
+                
+                try:
+                    await message.delete()
+                    logger.info(f"✅ Удален dice от {message.from_user.id}, эмодзи: {message.dice.emoji}")
+                except Exception as e:
+                    logger.error(f"❌ Не удалось удалить dice: {e}")
+                return  # Полностью прекращаем обработку
             
-            block_reason = ""
-            
-            # Определяем тип контента для логирования
-            if message.content_type == ContentType.DICE and message.dice:
-                if message.dice.emoji in GAME_EMOJIS:
-                    block_reason = f"игровой эмодзи {message.dice.emoji}"
-                else:
-                    block_reason = f"эмодзи {message.dice.emoji}"
-            elif message.content_type == ContentType.STICKER:
-                block_reason = "стикер"
-            elif message.content_type == ContentType.ANIMATION:
-                block_reason = "GIF"
-            elif message.content_type == ContentType.TEXT:
+            # 🔥 ЕСЛИ НЕ ЗАБЛОКИРОВАН - ОБРАБАТЫВАЕМ КАК ОБЫЧНО
+            if message.forward_date:
+                return  # Игнорируем пересланные dice
+
+            if message.dice and message.dice.emoji in games:
+                await process_dice(message, message.dice.emoji, message.dice.value, message.from_user.id)
+            else:
+                await message.reply(f'Неизвестный тип эмодзи: {message.dice.emoji if message.dice else "Нет эмодзи"}')
+
+        # 🔥 ХЕНДЛЕР ДЛЯ СТИКЕРОВ И GIF С ПРОВЕРКОЙ НА БЛОКИРОВКУ
+        @dp.message_handler(content_types=[ContentType.STICKER, ContentType.ANIMATION])
+        async def handle_media_with_block(message: types.Message):
+            if message.from_user.id in BLOCKED_USER_IDS:
+                content_type = "стикер" if message.content_type == ContentType.STICKER else "GIF"
+                logger.warning(
+                    f"🚫 БЛОКИРОВКА {content_type.upper()}: "
+                    f"UserID={message.from_user.id}, "
+                    f"Name={message.from_user.full_name}"
+                )
+                
+                try:
+                    await message.delete()
+                    logger.info(f"✅ Удален {content_type} от {message.from_user.id}")
+                except Exception as e:
+                    logger.error(f"❌ Не удалось удалить {content_type}: {e}")
+                return
+
+        # 🔥 ХЕНДЛЕР ДЛЯ ТЕКСТА И КОМАНД С ПРОВЕРКОЙ НА БЛОКИРОВКУ
+        @dp.message_handler(content_types=ContentType.TEXT)
+        async def handle_text_with_block(message: types.Message):
+            if message.from_user.id in BLOCKED_USER_IDS:
+                block_reason = "текстовое сообщение"
                 if message.text and message.text.startswith('/'):
                     command = message.text.lstrip('/').split(' ')[0]
                     if command in ['dice', 'slots', 'bask', 'dart', 'foot', 'bowl']:
                         block_reason = f"игровая команда /{command}"
                     else:
                         block_reason = f"команда /{command}"
-                else:
-                    block_reason = "текстовое сообщение"
-            else:
-                block_reason = f"тип {message.content_type}"
-            
-            logger.warning(
-                f"🚫 БЛОКИРОВКА: "
-                f"UserID={message.from_user.id}, "
-                f"Name={message.from_user.full_name}, "
-                f"Тип: {block_reason}"
-            )
-            
-            # 🔥 УДАЛЯЕМ ЛЮБОЕ СООБЩЕНИЕ ОТ ЗАБЛОКИРОВАННОГО ПОЛЬЗОВАТЕЛЯ
-            try:
-                await message.delete()
-                logger.info(f"✅ Удалено сообщение от {message.from_user.id}, причина: {block_reason}")
-            except Exception as e:
-                logger.error(f"❌ Не удалось удалить сообщение: {e}")
-            
-            return  # Полностью прекращаем обработку
+                
+                logger.warning(
+                    f"🚫 БЛОКИРОВКА ТЕКСТ: "
+                    f"UserID={message.from_user.id}, "
+                    f"Name={message.from_user.full_name}, "
+                    f"Тип: {block_reason}"
+                )
+                
+                try:
+                    await message.delete()
+                    logger.info(f"✅ Удален текст от {message.from_user.id}, тип: {block_reason}")
+                except Exception as e:
+                    logger.error(f"❌ Не удалось удалить текст: {e}")
+                return
 
         async def process_dice(message: types.Message, emoji: str, value: int, user: int):
             # 🔥 РЕГИСТРИРУЕМ ПОЛЬЗОВАТЕЛЯ ЕСЛИ ЕГО НЕТ
@@ -169,17 +196,6 @@ class MessagesHandler:
             if is_win and database.get('users', user).get('congratulate'):
                 await congratulate()
 
-        @dp.message_handler(content_types=ContentType.DICE)
-        async def handle_dice(message: types.Message):
-            # Проверяем, что сообщение не переслано
-            if message.forward_date:
-                return  # Игнорируем пересланные dice
-
-            if message.dice and message.dice.emoji in games:
-                await process_dice(message, message.dice.emoji, message.dice.value, message.from_user.id)
-            else:
-                await message.reply(f'Неизвестный тип эмодзи: {message.dice.emoji if message.dice else "Нет эмодзи"}')
-
         @dp.message_handler(commands=['dice', 'slots', 'bask', 'dart', 'foot', 'bowl'])
         async def roll_dice(message: types.Message):
             # Проверяем, что команда не из пересланного сообщения
@@ -224,7 +240,4 @@ class MessagesHandler:
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
             await process_dice(dice_message, emoji, dice_message.dice.value, message.from_user.id)
-            dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
-            await process_dice(dice_message, emoji, dice_message.dice.value, message.from_user.id)
-
 
