@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.dispatcher.middlewares import BaseMiddleware
+from aiogram.dispatcher.handler import CancelHandler
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -47,14 +48,32 @@ ADMIN_IDS = [1773287874, 1995856157]  # Замените на реальные I
 for admin_id in ADMIN_IDS:
     USERS.add_admin(admin_id)
 
-# user register
+# 🔥 НОВЫЙ МИДЛВАРЬ ДЛЯ БЛОКИРОВКИ ПОЛЬЗОВАТЕЛЕЙ
+class BlockedUsersMiddleware(BaseMiddleware):
+    async def on_pre_process_message(self, message: types.Message, data: dict):
+        BLOCKED_USER_IDS = [1995856157]  # Ваш список заблокированных
+        
+        if message.from_user.id in BLOCKED_USER_IDS:
+            logger.warning(f"🚫 ПОЛНАЯ БЛОКИРОВКА сообщения: UserID={message.from_user.id}, Name={message.from_user.full_name}")
+            # Полностью прерываем обработку сообщения
+            raise CancelHandler()
+    
+    async def on_pre_process_callback_query(self, callback_query: types.CallbackQuery, data: dict):
+        BLOCKED_USER_IDS = [1995856157]
+        
+        if callback_query.from_user.id in BLOCKED_USER_IDS:
+            logger.warning(f"🚫 ПОЛНАЯ БЛОКИРОВКА callback: UserID={callback_query.from_user.id}")
+            await callback_query.answer("❌ Доступ запрещен", show_alert=True)
+            raise CancelHandler()
 
 class UserRegistrationMiddleware(BaseMiddleware):
     async def on_pre_process_message(self, message: types.Message, data: dict):
         if not USERS.get('users', message.from_user.id):
             USERS.add(message.from_user.id, message.from_user.full_name)
 
-DP.middleware.setup(UserRegistrationMiddleware())
+# 🔥 РЕГИСТРИРУЕМ МИДЛВАРИ В ПРАВИЛЬНОМ ПОРЯДКЕ
+DP.middleware.setup(BlockedUsersMiddleware())  # ПЕРВЫЙ - блокировка
+DP.middleware.setup(UserRegistrationMiddleware())  # ВТОРОЙ - регистрация
 
 # main menu handler
 
@@ -132,7 +151,7 @@ async def info_command(message: types.Message):
         reply_markup=keyboard
     )
 
-# Админ панель
+# 🔥 ОБНОВЛЕННАЯ АДМИН ПАНЕЛЬ - ОДНА КНОПКА СБРОСА
 @DP.callback_query_handler(lambda c: c.data == 'admin')
 async def admin_panel(callback: types.CallbackQuery):
     if not USERS.is_admin(callback.from_user.id):
@@ -140,12 +159,12 @@ async def admin_panel(callback: types.CallbackQuery):
         return
 
     keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton('♻️ Сбросить все рейтинги', callback_data='admin-reset-all'))
-    keyboard.add(InlineKeyboardButton('🔥 Сбросить серии побед', callback_data='admin-reset-streaks'))
+    keyboard.add(InlineKeyboardButton('♻️ Сбросить ВСЕ рейтинги и серии', callback_data='admin-reset-all'))
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='back-to-main'))
 
     await callback.message.edit_text(
-        "⚙️ <b>Панель администратора</b>\nВыберите действие:",
+        "⚙️ <b>Панель администратора</b>\n\n"
+        "♻️ <b>Сбросить ВСЕ</b> - обнуляет всю статистику, включая серии побед, дневные и недельные рейтинги",
         reply_markup=keyboard
     )
     await callback.answer()
@@ -164,39 +183,13 @@ async def admin_reset_all_ratings(callback: types.CallbackQuery):
     
     if success:
         await callback.message.edit_text(
-            "✅ <b>Все рейтинги успешно сброшены!</b>\n\n"
+            "✅ <b>Все рейтинги и серии успешно сброшены!</b>\n\n"
             "Вся статистика обнулена. Теперь можно начинать новую статистику с чистого листа.",
             reply_markup=keyboard
         )
     else:
         await callback.message.edit_text(
             "❌ <b>Ошибка при сбросе рейтингов</b>\n\n"
-            "Попробуйте позже или проверьте логи.",
-            reply_markup=keyboard
-        )
-    
-    await callback.answer()
-
-@DP.callback_query_handler(lambda c: c.data == 'admin-reset-streaks')
-async def admin_reset_streaks(callback: types.CallbackQuery):
-    if not USERS.is_admin(callback.from_user.id):
-        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-        return
-
-    success = USERS.reset_streaks(callback.message.chat.id)
-
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
-    
-    if success:
-        await callback.message.edit_text(
-            "✅ <b>Все серии побед сброшены!</b>\n\n"
-            "Теперь игроки могут начать новые серии с чистого листа.",
-            reply_markup=keyboard
-        )
-    else:
-        await callback.message.edit_text(
-            "❌ <b>Ошибка при сбросе серий</b>\n\n"
             "Попробуйте позже или проверьте логи.",
             reply_markup=keyboard
         )
