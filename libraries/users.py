@@ -177,9 +177,29 @@ class Users:
             return False
 
     def update_win_streak(self, user_id: int, chat_id: int, game_type: str, is_win: bool):
-        """Обновляет серию побед для пользователя"""
+        """Обновляет серию побед для пользователя с проверкой смены дня"""
         try:
-            # Получаем текущую серию
+            # Проверяем, не сменился ли день для обнуления daily серий
+            current_date = self.get_current_date()
+            
+            # Получаем дату последнего обновления серии
+            self.cur.execute(
+                "SELECT last_win_timestamp FROM win_streaks WHERE id = ? AND chat_id = ? AND game_type = ?",
+                (user_id, chat_id, game_type)
+            )
+            result = self.cur.fetchone()
+            
+            # Если последнее обновление было не сегодня - сбрасываем current_streak
+            if result and result[0]:
+                last_update_date = datetime.datetime.fromtimestamp(result[0]).strftime("%Y-%m-%d")
+                if last_update_date != current_date:
+                    # Сменился день - сбрасываем текущую серию
+                    self.cur.execute(
+                        "UPDATE win_streaks SET current_streak = 0 WHERE id = ? AND chat_id = ? AND game_type = ?",
+                        (user_id, chat_id, game_type)
+                    )
+            
+            # Продолжаем обычную логику обновления серии
             self.cur.execute(
                 "SELECT current_streak, max_streak FROM win_streaks WHERE id = ? AND chat_id = ? AND game_type = ?",
                 (user_id, chat_id, game_type)
@@ -193,15 +213,12 @@ class Users:
                 current_streak, max_streak = result
             
             if is_win:
-                # Увеличиваем серию при выигрыше
                 current_streak += 1
                 if current_streak > max_streak:
                     max_streak = current_streak
             else:
-                # Сбрасываем серию при проигрыше
                 current_streak = 0
             
-            # Сохраняем или обновляем запись
             self.cur.execute('''
                 INSERT OR REPLACE INTO win_streaks 
                 (id, chat_id, game_type, current_streak, max_streak, last_win_timestamp) 
@@ -252,6 +269,7 @@ class Users:
     def get_current_week_start(self):
         """Возвращает дату начала текущей недели (понедельник)"""
         today = datetime.datetime.now().date()
+        # weekday() возвращает: 0-понедельник, 6-воскресенье
         start_of_week = today - datetime.timedelta(days=today.weekday())
         return start_of_week.strftime("%Y-%m-%d")
 
@@ -512,4 +530,3 @@ class Users:
             if "no such table" in str(e):
                 return []
             raise UserError(e)
-
