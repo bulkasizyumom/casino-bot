@@ -14,35 +14,146 @@ class MessagesHandler:
     def __init__(self, dp: Dispatcher, bot: Bot, games: dict, database: Users):
         self.register(dp, bot, games, database)
         self.last_dice_time = {}  # Словарь для хранения времени последнего депа по пользователям
+        self.fast_deps_counter = {}  # Счетчик быстрых депов для блокировки
+        self.special_user_losing_streaks = {}  # Счетчик проигрышных депов для специального пользователя
     
     def register(self, dp, bot, games: dict, database: Users):
-        # 🔥 РАЗДЕЛЬНЫЕ СПИСКИ:
-        BLOCKED_USER_IDS = [1773287874]  # ПОЛНОСТЬЮ ЗАБЛОКИРОВАННЫЕ
-        SLOW_USER_IDS = []  # пользователи с ограничением 3 сек (добавь нужные ID)
-        
         # 🔥 ИГРОВЫЕ ЭМОДЗИ КОТОРЫЕ БЛОКИРУЕМ
         GAME_EMOJIS = ['🎰', '🎲', '🏀', '🎯', '⚽', '🎳']  # Все игровые эмодзи
         
-        # 🔥 ХЕНДЛЕР ДЛЯ DICE С ПРОВЕРКОЙ НА БЛОКИРОВКУ (ВЫСОКИЙ ПРИОРИТЕТ)
+        # 🔥 СПЕЦИАЛЬНЫЙ ПОЛЬЗОВАТЕЛЬ
+        SPECIAL_USER_ID = 751379478  # ID пользователя для специальных сообщений
+        
+        # 🔥 ОСНОВНОЙ ХЕНДЛЕР ДЛЯ DICE С ПРОВЕРКОЙ НА БЛОКИРОВКУ
         @dp.message_handler(content_types=ContentType.DICE)
         async def handle_dice_with_block(message: types.Message):
-            # 🔥 ПЕРВОЕ - ПРОВЕРЯЕМ БЛОКИРОВКУ
-            if message.from_user.id in BLOCKED_USER_IDS:
-                logger.warning(
-                    f"🚫 БЛОКИРОВКА DICE: "
-                    f"UserID={message.from_user.id}, "
-                    f"Name={message.from_user.full_name}, "
-                    f"Emoji={message.dice.emoji if message.dice else 'None'}"
-                )
-                
-                try:
-                    await message.delete()
-                    logger.info(f"✅ Удален dice от {message.from_user.id}, эмодзи: {message.dice.emoji}")
-                except Exception as e:
-                    logger.error(f"❌ Не удалось удалить dice: {e}")
+            user_id = message.from_user.id
+            chat_id = message.chat.id
+            
+            # 🔥 ПЕРВОЕ - ПРОВЕРЯЕМ БЛОКИРОВКУ ЧЕРЕЗ БАЗУ ДАННЫХ
+            if database.is_user_blocked(user_id, chat_id):
+                block_info = database.get_block_info(user_id, chat_id)
+                if block_info:
+                    from datetime import datetime
+                    end_time = datetime.strptime(block_info['end'], '%Y-%m-%d %H:%M:%S')
+                    remaining = end_time - datetime.now()
+                    minutes_left = int(remaining.total_seconds() / 60)
+                    
+                    # Отправляем сообщение о блокировке
+                    warning_msg = await bot.send_message(
+                        chat_id,
+                        f'🚫 Пользователь @{message.from_user.username if message.from_user.username else message.from_user.full_name} заблокирован!\n'
+                        f'⏰ <b>Причина:</b> {block_info["reason"]}\n'
+                        f'⏳ <b>Разблокировка через:</b> {minutes_left} минут',
+                        message_thread_id=message.message_thread_id
+                    )
+                    
+                    # Удаляем оригинальное сообщение
+                    try:
+                        await message.delete()
+                        logger.info(f"✅ Удален dice от заблокированного пользователя {user_id}")
+                    except Exception as e:
+                        logger.error(f"❌ Не удалось удалить dice: {e}")
+                    
+                    # Удаляем предупреждение через 5 секунд
+                    await asyncio.sleep(5)
+                    try:
+                        await warning_msg.delete()
+                    except:
+                        pass
                 return  # Полностью прекращаем обработку
             
-            # 🔥 ЕСЛИ НЕ ЗАБЛОКИРОВАН - ОБРАБАТЫВАЕМ КАК ОБЫЧНО
+            # Проверяем анти-спам защиту для быстрых депов
+            current_time = time.time()
+            user_key = f"{user_id}_{chat_id}"
+            
+            # Инициализируем счетчик быстрых депов
+            if user_key not in self.fast_deps_counter:
+                self.fast_deps_counter[user_key] = {'count': 0, 'last_reset': current_time}
+            
+            # Проверяем быстрые депы (быстрее 0.3 секунды)
+            if user_key in self.last_dice_time:
+                time_diff = current_time - self.last_dice_time[user_key]
+                
+                if time_diff < 0.3:  # Слишком быстро
+                    # Увеличиваем счетчик быстрых депов
+                    if current_time - self.fast_deps_counter[user_key]['last_reset'] > 60:  # Сброс каждую минуту
+                        self.fast_deps_counter[user_key] = {'count': 1, 'last_reset': current_time}
+                    else:
+                        self.fast_deps_counter[user_key]['count'] += 1
+                    
+                    fast_count = self.fast_deps_counter[user_key]['count']
+                    
+                    # Предупреждение после 5 быстрых депов
+                    if fast_count == 5:
+                        warning_count = database.add_warning(user_id, chat_id, 'fast_deps')
+                        warning_msg = await bot.send_message(
+                            chat_id,
+                            f'⚠️ @{message.from_user.username if message.from_user.username else message.from_user.full_name}, '
+                            f'слишком быстро! ({fast_count}/10)\n'
+                            f'<i>При следующем нарушении будете заблокированы на 15 минут</i>',
+                            message_thread_id=message.message_thread_id
+                        )
+                        await asyncio.sleep(5)
+                        try:
+                            await warning_msg.delete()
+                        except:
+                            pass
+                    
+                    # Блокировка после 10 быстрых депов
+                    elif fast_count >= 10:
+                        database.block_user(user_id, chat_id, 'Слишком быстрые депы (спам)', 15)
+                        warning_msg = await bot.send_message(
+                            chat_id,
+                            f'🚫 @{message.from_user.username if message.from_user.username else message.from_user.full_name} заблокирован на 15 минут!\n'
+                            f'<b>Причина:</b> слишком быстрые депы (спам)',
+                            message_thread_id=message.message_thread_id
+                        )
+                        
+                        try:
+                            await message.delete()
+                        except:
+                            pass
+                        
+                        await asyncio.sleep(5)
+                        try:
+                            await warning_msg.delete()
+                        except:
+                            pass
+                        
+                        return
+            
+            # Обновляем время последнего депа
+            self.last_dice_time[user_key] = current_time
+            
+            # Добавляем деп в историю для проверки равномерных депов
+            if message.dice:
+                database.add_dice_to_history(user_id, chat_id, message.dice.emoji)
+                
+                # Проверяем равномерные депы
+                if database.check_uniform_deps(user_id, chat_id):
+                    database.block_user(user_id, chat_id, 'Равномерные депы (бот)', 15)
+                    warning_msg = await bot.send_message(
+                        chat_id,
+                        f'🚫 @{message.from_user.username if message.from_user.username else message.from_user.full_name} заблокирован на 15 минут!\n'
+                        f'<b>Причина:</b> подозрительно равномерные депы (бот)',
+                        message_thread_id=message.message_thread_id
+                    )
+                    
+                    try:
+                        await message.delete()
+                    except:
+                        pass
+                    
+                    await asyncio.sleep(5)
+                    try:
+                        await warning_msg.delete()
+                    except:
+                        pass
+                    
+                    return
+            
+            # Проверяем обычные условия
             if message.forward_date:
                 return  # Игнорируем пересланные dice
 
@@ -51,68 +162,47 @@ class MessagesHandler:
             else:
                 await message.reply(f'Неизвестный тип эмодзи: {message.dice.emoji if message.dice else "Нет эмодзи"}')
 
-        # 🔥 ХЕНДЛЕР ДЛЯ СТИКЕРОВ И GIF С ПРОВЕРКОЙ НА БЛОКИРОВКУ
-        @dp.message_handler(content_types=[ContentType.STICKER, ContentType.ANIMATION])
-        async def handle_media_with_block(message: types.Message):
-            if message.from_user.id in BLOCKED_USER_IDS:
-                content_type = "стикер" if message.content_type == ContentType.STICKER else "GIF"
-                logger.warning(
-                    f"🚫 БЛОКИРОВКА {content_type.upper()}: "
-                    f"UserID={message.from_user.id}, "
-                    f"Name={message.from_user.full_name}"
-                )
+        # 🔥 ХЕНДЛЕР ДЛЯ ВСЕХ СООБЩЕНИЙ С ПРОВЕРКОЙ БЛОКИРОВКИ
+        @dp.message_handler(content_types=[ContentType.TEXT, ContentType.STICKER, ContentType.ANIMATION])
+        async def handle_all_messages_with_block(message: types.Message):
+            user_id = message.from_user.id
+            chat_id = message.chat.id
+            
+            # Проверяем блокировку
+            if database.is_user_blocked(user_id, chat_id):
+                # Отправляем сообщение только для команд /start, /casino
+                if message.text and message.text.lower() in ['/start', '/casino']:
+                    block_info = database.get_block_info(user_id, chat_id)
+                    if block_info:
+                        from datetime import datetime
+                        end_time = datetime.strptime(block_info['end'], '%Y-%m-%d %H:%M:%S')
+                        remaining = end_time - datetime.now()
+                        minutes_left = int(remaining.total_seconds() / 60)
+                        
+                        warning_msg = await bot.send_message(
+                            chat_id,
+                            f'🚫 Пользователь @{message.from_user.username if message.from_user.username else message.from_user.full_name} заблокирован!\n'
+                            f'⏰ <b>Причина:</b> {block_info["reason"]}\n'
+                            f'⏳ <b>Разблокировка через:</b> {minutes_left} минут',
+                            message_thread_id=message.message_thread_id
+                        )
+                        
+                        await asyncio.sleep(5)
+                        try:
+                            await warning_msg.delete()
+                        except:
+                            pass
                 
+                # Удаляем сообщение от заблокированного пользователя
                 try:
                     await message.delete()
-                    logger.info(f"✅ Удален {content_type} от {message.from_user.id}")
+                    logger.info(f"✅ Удалено сообщение от заблокированного пользователя {user_id}")
                 except Exception as e:
-                    logger.error(f"❌ Не удалось удалить {content_type}: {e}")
-                return
-
-        # 🔥 ХЕНДЛЕР ДЛЯ КОМАНД /start И /casino С ПРОВЕРКОЙ НА БЛОКИРОВКУ
-        @dp.message_handler(commands=['start', 'casino'])
-        async def handle_start_casino_with_block(message: types.Message):
-            if message.from_user.id in BLOCKED_USER_IDS:
-                logger.warning(
-                    f"🚫 БЛОКИРОВКА КОМАНДА: "
-                    f"UserID={message.from_user.id}, "
-                    f"Name={message.from_user.full_name}, "
-                    f"Command={message.text}"
-                )
-                
-                try:
-                    await message.delete()
-                    logger.info(f"✅ Удалена команда от {message.from_user.id}, команда: {message.text}")
-                except Exception as e:
-                    logger.error(f"❌ Не удалось удалить команду: {e}")
+                    logger.error(f"❌ Не удалось удалить сообщение: {e}")
                 return
             
-            # 🔥 ЕСЛИ НЕ ЗАБЛОКИРОВАН - ВЫЗЫВАЕМ ОРИГИНАЛЬНЫЙ ОБРАБОТЧИК ИЗ main.py
-            from main import main_menu
-            await main_menu(message)
-
-        # 🔥 ХЕНДЛЕР ДЛЯ ОСТАЛЬНОГО ТЕКСТА С ПРОВЕРКОЙ НА БЛОКИРОВКУ
-        @dp.message_handler(content_types=ContentType.TEXT)
-        async def handle_text_with_block(message: types.Message):
-            if message.from_user.id in BLOCKED_USER_IDS:
-                block_reason = "текстовое сообщение"
-                if message.text and message.text.startswith('/'):
-                    command = message.text.lstrip('/').split(' ')[0]
-                    block_reason = f"команда /{command}"
-                
-                logger.warning(
-                    f"🚫 БЛОКИРОВКА ТЕКСТ: "
-                    f"UserID={message.from_user.id}, "
-                    f"Name={message.from_user.full_name}, "
-                    f"Тип: {block_reason}"
-                )
-                
-                try:
-                    await message.delete()
-                    logger.info(f"✅ Удален текст от {message.from_user.id}, тип: {block_reason}")
-                except Exception as e:
-                    logger.error(f"❌ Не удалось удалить текст: {e}")
-                return
+            # Если пользователь не заблокирован, передаем обработку дальше
+            # Для /start и /casino будет вызван основной обработчик
 
         async def process_dice(message: types.Message, emoji: str, value: int, user: int):
             # 🔥 РЕГИСТРИРУЕМ ПОЛЬЗОВАТЕЛЯ ЕСЛИ ЕГО НЕТ
@@ -122,34 +212,6 @@ class MessagesHandler:
             # Проверяем, что сообщение не переслано
             if message.forward_date:
                 return  # Игнорируем пересланные сообщения
-
-            # Проверяем анти-спам защиту
-            current_time = time.time()
-            user_key = f"{user}_{message.chat.id}"
-            
-            if user_key in self.last_dice_time:
-                time_diff = current_time - self.last_dice_time[user_key]
-                
-                # 🔥 РАЗНЫЕ НАСТРОЙКИ ДЛЯ РАЗНЫХ ГРУПП
-                if user in SLOW_USER_IDS:
-                    spam_threshold = 3.0  # 3 секунды для медленных пользователей
-                else:
-                    spam_threshold = 0.3  # 0.3 секунды для всех остальных
-                
-                if time_diff < spam_threshold:
-                    # 🔥 ЛОГИРУЕМ АНТИ-СПАМ
-                    user_type = "МЕДЛЕННЫЙ" if user in SLOW_USER_IDS else "ОБЫЧНЫЙ"
-                    logger.warning(
-                        f"🚫 АНТИ-СПАМ ({user_type}): "
-                        f"UserID={user}, "
-                        f"Name={message.from_user.full_name}, "
-                        f"TimeDiff={time_diff:.3f}s, "
-                        f"Threshold={spam_threshold}s"
-                    )
-                    return  # Игнорируем слишком частые депы
-            
-            # Обновляем время последнего депа
-            self.last_dice_time[user_key] = current_time
 
             game = games[emoji]
             game_name = game['name']
@@ -208,6 +270,38 @@ class MessagesHandler:
                         message_thread_id=message.message_thread_id
                     )
 
+            # 🔥 СПЕЦИАЛЬНОЕ СООБЩЕНИЕ ДЛЯ ПОЛЬЗОВАТЕЛЯ 751379478
+            SPECIAL_USER_ID = 751379478
+            if user == SPECIAL_USER_ID:
+                # Инициализируем или обновляем счетчик проигрышных депов
+                user_key = f"{user}_{chat_id}"
+                
+                if is_win:
+                    # При выигрыше сбрасываем счетчик
+                    self.special_user_losing_streaks[user_key] = 0
+                else:
+                    # При проигрыше увеличиваем счетчик
+                    if user_key not in self.special_user_losing_streaks:
+                        self.special_user_losing_streaks[user_key] = 1
+                    else:
+                        self.special_user_losing_streaks[user_key] += 1
+                    
+                    # Если 15 проигрышных депов подряд
+                    if self.special_user_losing_streaks[user_key] == 15:
+                        await asyncio.sleep(1)
+                        special_message = await bot.send_message(
+                            message.chat.id,
+                            "💋 Не грусти, пупсик, в следующий раз получится",
+                            message_thread_id=message.message_thread_id
+                        )
+                        
+                        # Удаляем сообщение через 10 секунд
+                        await asyncio.sleep(10)
+                        try:
+                            await special_message.delete()
+                        except:
+                            pass
+
             # Обновляем периодическую статистику
             database.increment_period_stats(user, chat_id, game_name, tries, wins, jackpots)
 
@@ -217,35 +311,55 @@ class MessagesHandler:
 
         @dp.message_handler(commands=['dice', 'slots', 'bask', 'dart', 'foot', 'bowl'])
         async def roll_dice(message: types.Message):
-            # Проверяем, что команда не из пересланного сообщения
-            if message.forward_date:
-                return  # Игнорируем команды из пересланных сообщений
+            user_id = message.from_user.id
+            chat_id = message.chat.id
+            
+            # Проверяем блокировку
+            if database.is_user_blocked(user_id, chat_id):
+                block_info = database.get_block_info(user_id, chat_id)
+                if block_info:
+                    from datetime import datetime
+                    end_time = datetime.strptime(block_info['end'], '%Y-%m-%d %H:%M:%S')
+                    remaining = end_time - datetime.now()
+                    minutes_left = int(remaining.total_seconds() / 60)
+                    
+                    warning_msg = await message.reply(
+                        f'🚫 Вы заблокированы!\n'
+                        f'⏰ <b>Причина:</b> {block_info["reason"]}\n'
+                        f'⏳ <b>Разблокировка через:</b> {minutes_left} минут\n\n'
+                        f'Если это ошибка, используйте /help',
+                        disable_notification=True
+                    )
+                    
+                    await asyncio.sleep(5)
+                    try:
+                        await warning_msg.delete()
+                    except:
+                        pass
+                return
 
             # Проверяем анти-спам защиту для команд
             current_time = time.time()
-            user_key = f"{message.from_user.id}_{message.chat.id}"
+            user_key = f"{user_id}_{chat_id}"
             
             if user_key in self.last_dice_time:
                 time_diff = current_time - self.last_dice_time[user_key]
                 
-                # 🔥 РАЗНЫЕ НАСТРОЙКИ ДЛЯ РАЗНЫХ ГРУПП
-                if message.from_user.id in SLOW_USER_IDS:
-                    spam_threshold = 3.0  # 3 секунды для медленных пользователей
-                else:
-                    spam_threshold = 0.3  # 0.3 секунды для всех остальных
-                
-                if time_diff < spam_threshold:
-                    # 🔥 ЛОГИРУЕМ АНТИ-СПАМ ДЛЯ КОМАНД
-                    user_type = "МЕДЛЕННЫЙ" if message.from_user.id in SLOW_USER_IDS else "ОБЫЧНЫЙ"
-                    logger.warning(
-                        f"🚫 АНТИ-СПАМ КОМАНДА ({user_type}): "
-                        f"UserID={message.from_user.id}, "
-                        f"Name={message.from_user.full_name}, "
-                        f"TimeDiff={time_diff:.3f}s, "
-                        f"Threshold={spam_threshold}s"
-                    )
-                    await message.reply("⏳ <b>Слишком быстро!</b> Подождите немного перед следующим броском.")
-                    return
+                if time_diff < 0.3:
+                    # Увеличиваем счетчик быстрых депов
+                    if user_key not in self.fast_deps_counter:
+                        self.fast_deps_counter[user_key] = {'count': 1, 'last_reset': current_time}
+                    else:
+                        if current_time - self.fast_deps_counter[user_key]['last_reset'] > 60:
+                            self.fast_deps_counter[user_key] = {'count': 1, 'last_reset': current_time}
+                        else:
+                            self.fast_deps_counter[user_key]['count'] += 1
+                    
+                    fast_count = self.fast_deps_counter[user_key]['count']
+                    
+                    if fast_count >= 5:
+                        await message.reply("⏳ <b>Слишком быстро!</b> Подождите немного перед следующим броском.", disable_notification=True)
+                        return
             
             # Обновляем время последнего депа
             self.last_dice_time[user_key] = current_time
@@ -258,8 +372,7 @@ class MessagesHandler:
                 return
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
-            await process_dice(dice_message, emoji, dice_message.dice.value, message.from_user.id)
-
+            await process_dice(dice_message, emoji, dice_message.dice.value, user_id)
 
 
 
