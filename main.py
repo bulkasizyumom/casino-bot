@@ -15,6 +15,8 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.types import ContentType, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.dispatcher import FSMContext  # 🔥 ДОБАВЛЕН ЭТОТ ИМПОРТ
+from aiogram.dispatcher.filters.state import State, StatesGroup  # 🔥 ДОБАВЛЕН ЭТОТ ИМПОРТ
 
 from handlers.messages import MessagesHandler
 from handlers.rating import RatingHandler
@@ -110,6 +112,10 @@ class UserRegistrationMiddleware(BaseMiddleware):
 # 🔥 РЕГИСТРИРУЕМ МИДЛВАРИ В ПРАВИЛЬНОМ ПОРЯДКЕ
 DP.middleware.setup(BlockedUsersMiddleware())  # ПЕРВЫЙ - блокировка
 DP.middleware.setup(UserRegistrationMiddleware())  # ВТОРОЙ - регистрация
+
+# 🔥 СОСТОЯНИЯ ДЛЯ СИСТЕМЫ ПОМОЩИ
+class HelpStates(StatesGroup):
+    waiting_for_message = State()
 
 # main menu handler
 @DP.message_handler(commands=['casino', 'start'])
@@ -215,12 +221,6 @@ async def write_help_message(message: types.Message):
     )
     
     # Устанавливаем состояние для ожидания сообщения
-    from aiogram.dispatcher import FSMContext
-    from aiogram.dispatcher.filters.state import State, StatesGroup
-    
-    class HelpStates(StatesGroup):
-        waiting_for_message = State()
-    
     await HelpStates.waiting_for_message.set()
 
 # Обработчик отмены
@@ -234,57 +234,51 @@ async def cancel_help(message: types.Message, state: FSMContext):
     )
 
 # Обработчик текста помощи
-@DP.message_handler(state='*', content_types=ContentType.TEXT)
+@DP.message_handler(state=HelpStates.waiting_for_message, content_types=ContentType.TEXT)
 async def process_help_message(message: types.Message, state: FSMContext):
-    from aiogram.dispatcher.filters.state import State, StatesGroup
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    user_name = message.from_user.full_name
+    username = f"@{message.from_user.username}" if message.from_user.username else "нет username"
     
-    class HelpStates(StatesGroup):
-        waiting_for_message = State()
+    # Сохраняем сообщение в базе данных
+    message_id = USERS.add_help_message(user_id, chat_id, message.text)
     
-    if await state.get_state() == HelpStates.waiting_for_message.state:
-        user_id = message.from_user.id
-        chat_id = message.chat.id
-        user_name = message.from_user.full_name
-        username = f"@{message.from_user.username}" if message.from_user.username else "нет username"
+    if message_id:
+        # Отправляем уведомление админам
+        for admin_id in ADMIN_CHAT_IDS:
+            try:
+                await BOT.send_message(
+                    admin_id,
+                    f"🆘 <b>НОВОЕ СООБЩЕНИЕ ПОМОЩИ</b>\n\n"
+                    f"👤 <b>Пользователь:</b> {user_name}\n"
+                    f"🔗 <b>Username:</b> {username}\n"
+                    f"🆔 <b>ID:</b> {user_id}\n"
+                    f"💬 <b>Сообщение ID:</b> {message_id}\n\n"
+                    f"📝 <b>Текст:</b>\n{message.text}\n\n"
+                    f"📌 <b>Действия:</b>\n"
+                    f"/unblock_{user_id}_{chat_id} - разблокировать\n"
+                    f"/viewhelp_{message_id} - просмотреть детали"
+                )
+            except Exception as e:
+                logger.error(f"Не удалось отправить уведомление админу {admin_id}: {e}")
         
-        # Сохраняем сообщение в базе данных
-        message_id = USERS.add_help_message(user_id, chat_id, message.text)
-        
-        if message_id:
-            # Отправляем уведомление админам
-            for admin_id in ADMIN_CHAT_IDS:
-                try:
-                    await BOT.send_message(
-                        admin_id,
-                        f"🆘 <b>НОВОЕ СООБЩЕНИЕ ПОМОЩИ</b>\n\n"
-                        f"👤 <b>Пользователь:</b> {user_name}\n"
-                        f"🔗 <b>Username:</b> {username}\n"
-                        f"🆔 <b>ID:</b> {user_id}\n"
-                        f"💬 <b>Сообщение ID:</b> {message_id}\n\n"
-                        f"📝 <b>Текст:</b>\n{message.text}\n\n"
-                        f"📌 <b>Действия:</b>\n"
-                        f"/unblock_{user_id}_{chat_id} - разблокировать\n"
-                        f"/viewhelp_{message_id} - просмотреть детали"
-                    )
-                except Exception as e:
-                    logger.error(f"Не удалось отправить уведомление админу {admin_id}: {e}")
-            
-            await BOT.send_message(
-                chat_id,
-                "✅ <b>Сообщение отправлено!</b>\n\n"
-                "Администраторы получили ваше сообщение и ответят в ближайшее время.\n\n"
-                "<i>Спасибо за обращение!</i>",
-                reply_markup=ReplyKeyboardRemove()
-            )
-        else:
-            await BOT.send_message(
-                chat_id,
-                "❌ <b>Ошибка!</b>\n\n"
-                "Не удалось отправить сообщение. Попробуйте позже.",
-                reply_markup=ReplyKeyboardRemove()
-            )
-        
-        await state.finish()
+        await BOT.send_message(
+            chat_id,
+            "✅ <b>Сообщение отправлено!</b>\n\n"
+            "Администраторы получили ваше сообщение и ответят в ближайшее время.\n\n"
+            "<i>Спасибо за обращение!</i>",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    else:
+        await BOT.send_message(
+            chat_id,
+            "❌ <b>Ошибка!</b>\n\n"
+            "Не удалось отправить сообщение. Попробуйте позже.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    
+    await state.finish()
 
 # 🔥 ОБНОВЛЕННАЯ АДМИН ПАНЕЛЬ
 @DP.callback_query_handler(lambda c: c.data == 'admin')
