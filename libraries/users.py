@@ -1,532 +1,339 @@
+import asyncio
 import time
-import datetime
+import logging
 
-class UserError(Exception):
-    pass
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import ContentType
 
-class UserNotFound(Exception):
-    pass
+from libraries.users import Users
 
-class Users:
-    def __init__(self, database):
-        self.database = database
-        self.cur = self.database.db
+# Настраиваем логгер
+logger = logging.getLogger(__name__)
 
-        # Создаем таблицы с новой структурой
-        self.cur.executescript('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY,
-                name TEXT, 
-                congratulate BOOL
-            );
-
-            CREATE TABLE IF NOT EXISTS tries (
-                id INTEGER,
-                chat_id INTEGER,
-                slots INTEGER DEFAULT 0,
-                dice INTEGER DEFAULT 0, 
-                dart INTEGER DEFAULT 0,
-                bask INTEGER DEFAULT 0,
-                foot INTEGER DEFAULT 0,
-                bowl INTEGER DEFAULT 0,
-                timestamp INTEGER,
-                PRIMARY KEY (id, chat_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS wins (
-                id INTEGER,
-                chat_id INTEGER,
-                slots INTEGER DEFAULT 0,
-                dice INTEGER DEFAULT 0,
-                dart INTEGER DEFAULT 0,
-                bask INTEGER DEFAULT 0,
-                foot INTEGER DEFAULT 0,
-                bowl INTEGER DEFAULT 0,
-                timestamp INTEGER,
-                PRIMARY KEY (id, chat_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS jackpots (
-                id INTEGER,
-                chat_id INTEGER,
-                slots INTEGER DEFAULT 0,
-                timestamp INTEGER,
-                PRIMARY KEY (id, chat_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS admins (
-                user_id INTEGER PRIMARY KEY
-            );
-
-            CREATE TABLE IF NOT EXISTS daily_stats (
-                id INTEGER,
-                chat_id INTEGER,
-                game_type TEXT,
-                tries INTEGER DEFAULT 0,
-                wins INTEGER DEFAULT 0,
-                jackpots INTEGER DEFAULT 0,
-                date TEXT,
-                PRIMARY KEY (id, chat_id, game_type, date)
-            );
-            
-            CREATE TABLE IF NOT EXISTS weekly_stats (
-                id INTEGER,
-                chat_id INTEGER,
-                game_type TEXT,
-                tries INTEGER DEFAULT 0,
-                wins INTEGER DEFAULT 0,
-                jackpots INTEGER DEFAULT 0,
-                week_start TEXT,
-                PRIMARY KEY (id, chat_id, game_type, week_start)
-            );
-
-            -- НОВАЯ ТАБЛИЦА ДЛЯ СЕРИЙ ПОБЕД
-            CREATE TABLE IF NOT EXISTS win_streaks (
-                id INTEGER,
-                chat_id INTEGER,
-                game_type TEXT,
-                current_streak INTEGER DEFAULT 0,
-                max_streak INTEGER DEFAULT 0,
-                last_win_timestamp INTEGER,
-                PRIMARY KEY (id, chat_id, game_type)
-            );
-
-            -- ТАБЛИЦА ДЛЯ СБРОСА СЕРИЙ
-            CREATE TABLE IF NOT EXISTS streak_resets (
-                chat_id INTEGER,
-                reset_type TEXT,
-                last_reset TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (chat_id, reset_type)
-            );
-        ''')
-        self.database.conn.commit()
-
-    def add(self, id: int, name: str):
-        try:
-            self.cur.execute("BEGIN")
-            self.cur.execute("INSERT OR IGNORE INTO users (id, name, congratulate) VALUES (?, ?, ?)", (id, name, True))
-            self.cur.execute("COMMIT")
-        except Exception as e: 
-            raise UserError(e)
-
-    def add_admin(self, user_id: int):
-        try:
-            self.cur.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (user_id,))
-            self.database.conn.commit()
-        except Exception as e: 
-            raise UserError(e)
-
-    def is_admin(self, user_id: int) -> bool:
-        try:
-            self.cur.execute("SELECT 1 FROM admins WHERE user_id = ?", (user_id,))
-            return self.cur.fetchone() is not None
-        except Exception as e: 
-            raise UserError(e)
-
-    def reset_user(self, id: int, chat_id: int):
-        try:
-            self.cur.execute("BEGIN")
-            self.cur.execute("DELETE FROM tries WHERE id = ? AND chat_id = ?", (id, chat_id))
-            self.cur.execute("DELETE FROM wins WHERE id = ? AND chat_id = ?", (id, chat_id))
-            self.cur.execute("DELETE FROM jackpots WHERE id = ? AND chat_id = ?", (id, chat_id))
-            self.cur.execute("DELETE FROM win_streaks WHERE id = ? AND chat_id = ?", (id, chat_id))
-            self.cur.execute("COMMIT")
-        except Exception as e: 
-            raise UserError(e)
-
-    def reset_chat(self, chat_id: int):
-        try:
-            self.cur.execute("BEGIN")
-            self.cur.execute("DELETE FROM tries WHERE chat_id = ?", (chat_id,))
-            self.cur.execute("DELETE FROM wins WHERE chat_id = ?", (chat_id,))
-            self.cur.execute("DELETE FROM jackpots WHERE chat_id = ?", (chat_id,))
-            self.cur.execute("DELETE FROM win_streaks WHERE chat_id = ?", (chat_id,))
-            self.cur.execute("COMMIT")
-        except Exception as e: 
-            raise UserError(e)
-
-    def reset_all_stats(self):
-        """Сбрасывает всю статистику"""
-        try:
-            self.cur.execute("BEGIN")
-            self.cur.execute("DELETE FROM tries")
-            self.cur.execute("DELETE FROM wins")
-            self.cur.execute("DELETE FROM jackpots")
-            self.cur.execute("DELETE FROM daily_stats")
-            self.cur.execute("DELETE FROM weekly_stats")
-            self.cur.execute("DELETE FROM win_streaks")
-            self.cur.execute("DELETE FROM streak_resets")
-            self.cur.execute("COMMIT")
-            self.database.conn.commit()
-            return True
-        except Exception as e:
-            print(f"Error resetting all stats: {e}")
-            return False
-
-    def reset_streaks(self, chat_id: int = None):
-        """Сбрасывает все серии побед"""
-        try:
-            if chat_id:
-                self.cur.execute("DELETE FROM win_streaks WHERE chat_id = ?", (chat_id,))
-            else:
-                self.cur.execute("DELETE FROM win_streaks")
-            self.database.conn.commit()
-            return True
-        except Exception as e:
-            print(f"Error resetting streaks: {e}")
-            return False
-
-    def update_win_streak(self, user_id: int, chat_id: int, game_type: str, is_win: bool):
-        """Обновляет серию побед для пользователя с проверкой смены дня"""
-        try:
-            # Проверяем, не сменился ли день для обнуления daily серий
-            current_date = self.get_current_date()
-            
-            # Получаем дату последнего обновления серии
-            self.cur.execute(
-                "SELECT last_win_timestamp FROM win_streaks WHERE id = ? AND chat_id = ? AND game_type = ?",
-                (user_id, chat_id, game_type)
-            )
-            result = self.cur.fetchone()
-            
-            # Если последнее обновление было не сегодня - сбрасываем current_streak
-            if result and result[0]:
-                last_update_date = datetime.datetime.fromtimestamp(result[0]).strftime("%Y-%m-%d")
-                if last_update_date != current_date:
-                    # Сменился день - сбрасываем текущую серию
-                    self.cur.execute(
-                        "UPDATE win_streaks SET current_streak = 0 WHERE id = ? AND chat_id = ? AND game_type = ?",
-                        (user_id, chat_id, game_type)
-                    )
-            
-            # Продолжаем обычную логику обновления серии
-            self.cur.execute(
-                "SELECT current_streak, max_streak FROM win_streaks WHERE id = ? AND chat_id = ? AND game_type = ?",
-                (user_id, chat_id, game_type)
-            )
-            result = self.cur.fetchone()
-            
-            current_streak = 0
-            max_streak = 0
-            
-            if result:
-                current_streak, max_streak = result
-            
-            if is_win:
-                current_streak += 1
-                if current_streak > max_streak:
-                    max_streak = current_streak
-            else:
-                current_streak = 0
-            
-            self.cur.execute('''
-                INSERT OR REPLACE INTO win_streaks 
-                (id, chat_id, game_type, current_streak, max_streak, last_win_timestamp) 
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (user_id, chat_id, game_type, current_streak, max_streak, int(time.time()) if is_win else None))
-            
-            self.database.conn.commit()
-            return current_streak, max_streak
-            
-        except Exception as e:
-            print(f"Error updating win streak: {e}")
-            return 0, 0
-
-    def get_win_streaks(self, chat_id: int, game_type: str = None):
-        """Получает максимальные серии побед"""
-        try:
-            if game_type:
-                self.cur.execute('''
-                    SELECT id, game_type, max_streak 
-                    FROM win_streaks 
-                    WHERE chat_id = ? AND game_type = ? AND max_streak > 0
-                    ORDER BY max_streak DESC
-                ''', (chat_id, game_type))
-            else:
-                self.cur.execute('''
-                    SELECT id, game_type, max_streak 
-                    FROM win_streaks 
-                    WHERE chat_id = ? AND max_streak > 0
-                    ORDER BY max_streak DESC
-                ''', (chat_id,))
-            
-            results = []
-            for row in self.cur.fetchall():
-                results.append({
-                    'id': row[0],
-                    'game_type': row[1],
-                    'max_streak': row[2]
-                })
-            return results
-        except Exception as e:
-            print(f"Error getting win streaks: {e}")
-            return []
-
-    def get_current_date(self):
-        """Возвращает текущую дату в формате YYYY-MM-DD"""
-        return datetime.datetime.now().strftime("%Y-%m-%d")
-
-    def get_current_week_start(self):
-        """Возвращает дату начала текущей недели (понедельник)"""
-        today = datetime.datetime.now().date()
-        # weekday() возвращает: 0-понедельник, 6-воскресенье
-        start_of_week = today - datetime.timedelta(days=today.weekday())
-        return start_of_week.strftime("%Y-%m-%d")
-
-    def increment_period_stats(self, user_id: int, chat_id: int, game_type: str, tries: int = 0, wins: int = 0, jackpots: int = 0):
-        """Увеличивает статистику для текущих дня и недели"""
-        try:
-            current_date = self.get_current_date()
-            week_start = self.get_current_week_start()
-            
-            # Обновляем дневную статистику
-            self.cur.execute('''
-                INSERT INTO daily_stats (id, chat_id, game_type, tries, wins, jackpots, date)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id, chat_id, game_type, date) 
-                DO UPDATE SET 
-                    tries = daily_stats.tries + excluded.tries,
-                    wins = daily_stats.wins + excluded.wins,
-                    jackpots = daily_stats.jackpots + excluded.jackpots
-            ''', (user_id, chat_id, game_type, tries, wins, jackpots, current_date))
-            
-            # Обновляем недельную статистику
-            self.cur.execute('''
-                INSERT INTO weekly_stats (id, chat_id, game_type, tries, wins, jackpots, week_start)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id, chat_id, game_type, week_start) 
-                DO UPDATE SET 
-                    tries = weekly_stats.tries + excluded.tries,
-                    wins = weekly_stats.wins + excluded.wins,
-                    jackpots = weekly_stats.jackpots + excluded.jackpots
-            ''', (user_id, chat_id, game_type, tries, wins, jackpots, week_start))
-            
-            self.database.conn.commit()
-            return True
-        except Exception as e:
-            print(f"Error updating period stats: {e}")
-            return False
-
-    def get_daily_stats(self, chat_id: int, date: str = None):
-        """Получает дневную статистику"""
-        if date is None:
-            date = self.get_current_date()
+class MessagesHandler:
+    def __init__(self, dp: Dispatcher, bot: Bot, games: dict, database: Users):
+        self.register(dp, bot, games, database)
+        self.last_dice_time = {}  # Словарь для хранения времени последнего депа по пользователям
+        self.fast_deps_counter = {}  # Счетчик быстрых депов для блокировки
+    
+    def register(self, dp, bot, games: dict, database: Users):
+        # 🔥 ИГРОВЫЕ ЭМОДЗИ КОТОРЫЕ БЛОКИРУЕМ
+        GAME_EMOJIS = ['🎰', '🎲', '🏀', '🎯', '⚽', '🎳']  # Все игровые эмодзи
         
-        try:
-            self.cur.execute('''
-                SELECT id, game_type, tries, wins, jackpots 
-                FROM daily_stats 
-                WHERE chat_id = ? AND date = ?
-            ''', (chat_id, date))
+        # 🔥 ОСНОВНОЙ ХЕНДЛЕР ДЛЯ DICE С ПРОВЕРКОЙ НА БЛОКИРОВКУ
+        @dp.message_handler(content_types=ContentType.DICE)
+        async def handle_dice_with_block(message: types.Message):
+            user_id = message.from_user.id
+            chat_id = message.chat.id
             
-            results = []
-            for row in self.cur.fetchall():
-                results.append({
-                    'id': row[0],
-                    'game_type': row[1],
-                    'tries': row[2] or 0,
-                    'wins': row[3] or 0,
-                    'jackpots': row[4] or 0
-                })
-            return results
-        except Exception as e:
-            print(f"Error getting daily stats: {e}")
-            return []
-
-    def get_weekly_stats(self, chat_id: int, week_start: str = None):
-        """Получает недельную статистику"""
-        if week_start is None:
-            week_start = self.get_current_week_start()
-        
-        try:
-            self.cur.execute('''
-                SELECT id, game_type, tries, wins, jackpots 
-                FROM weekly_stats 
-                WHERE chat_id = ? AND week_start = ?
-            ''', (chat_id, week_start))
+            # 🔥 ПЕРВОЕ - ПРОВЕРЯЕМ БЛОКИРОВКУ ЧЕРЕЗ БАЗУ ДАННЫХ
+            if database.is_user_blocked(user_id, chat_id):
+                block_info = database.get_block_info(user_id, chat_id)
+                if block_info:
+                    from datetime import datetime
+                    end_time = datetime.strptime(block_info['end'], '%Y-%m-%d %H:%M:%S')
+                    remaining = end_time - datetime.now()
+                    minutes_left = int(remaining.total_seconds() / 60)
+                    
+                    # Отправляем сообщение о блокировке
+                    warning_msg = await bot.send_message(
+                        chat_id,
+                        f'🚫 Пользователь @{message.from_user.username if message.from_user.username else message.from_user.full_name} заблокирован!\n'
+                        f'⏰ <b>Причина:</b> {block_info["reason"]}\n'
+                        f'⏳ <b>Разблокировка через:</b> {minutes_left} минут',
+                        message_thread_id=message.message_thread_id
+                    )
+                    
+                    # Удаляем оригинальное сообщение
+                    try:
+                        await message.delete()
+                        logger.info(f"✅ Удален dice от заблокированного пользователя {user_id}")
+                    except Exception as e:
+                        logger.error(f"❌ Не удалось удалить dice: {e}")
+                    
+                    # Удаляем предупреждение через 5 секунд
+                    await asyncio.sleep(5)
+                    try:
+                        await warning_msg.delete()
+                    except:
+                        pass
+                return  # Полностью прекращаем обработку
             
-            results = []
-            for row in self.cur.fetchall():
-                results.append({
-                    'id': row[0],
-                    'game_type': row[1],
-                    'tries': row[2] or 0,
-                    'wins': row[3] or 0,
-                    'jackpots': row[4] or 0
-                })
-            return results
-        except Exception as e:
-            print(f"Error getting weekly stats: {e}")
-            return []
-
-    def get(self, table: str, id: int, chat_id: int = None):
-        try:
-            if chat_id is not None:
-                self.cur.execute(f"SELECT * FROM {table} WHERE id = ? AND chat_id = ?", (id, chat_id))
-            else:
-                self.cur.execute(f"SELECT * FROM {table} WHERE id = ?", (id,))
+            # Проверяем анти-спам защиту для быстрых депов
+            current_time = time.time()
+            user_key = f"{user_id}_{chat_id}"
             
-            columns = [description[0] for description in self.cur.description]
-            result = self.cur.fetchone()
-            if result:
-                data = dict(zip(columns, result))
-                # Заменяем None на 0 для числовых полей
-                for key in list(data.keys()):
-                    if key not in ['id', 'chat_id', 'name', 'congratulate', 'timestamp'] and data[key] is None:
-                        data[key] = 0
-                return data
-            return None
-        except Exception as e: 
-            # Если таблица не существует, возвращаем None
-            if "no such table" in str(e):
-                return None
-            raise UserError(e)
-
-    def set(self, table: str, id: int, chat_id: int, parameter: str, value):
-        try:
-            if table == 'users':
-                self.cur.execute(
-                    f"UPDATE {table} SET {parameter} = ? WHERE id = ?",
-                    (value, id)
-                )
-            else:
-                self.cur.execute(
-                    f"INSERT OR REPLACE INTO {table} (id, chat_id, {parameter}, timestamp) VALUES (?, ?, ?, ?)",
-                    (id, chat_id, value, int(time.time()))
-                )
-            self.database.conn.commit()
-        except Exception as e: 
-            raise UserError(e)
-
-    def increment(self, table: str, id: int, chat_id: int, parameter: str):
-        try:
-            # Сначала получаем текущую запись целиком
-            self.cur.execute(
-                f"SELECT * FROM {table} WHERE id = ? AND chat_id = ?",
-                (id, chat_id)
-            )
-            result = self.cur.fetchone()
+            # Инициализируем счетчик быстрых депов
+            if user_key not in self.fast_deps_counter:
+                self.fast_deps_counter[user_key] = {'count': 0, 'last_reset': current_time}
             
-            if result:
-                # Если запись существует, обновляем только нужное поле
-                columns = [description[0] for description in self.cur.description]
-                current_data = dict(zip(columns, result))
+            # Проверяем быстрые депы (быстрее 0.3 секунды)
+            if user_key in self.last_dice_time:
+                time_diff = current_time - self.last_dice_time[user_key]
                 
-                # Увеличиваем только нужный параметр, остальные сохраняем
-                current_value = current_data.get(parameter, 0) or 0
-                updated_value = current_value + 1
-                current_data[parameter] = updated_value
-                current_data['timestamp'] = int(time.time())
+                if time_diff < 0.3:  # Слишком быстро
+                    # Увеличиваем счетчик быстрых депов
+                    if current_time - self.fast_deps_counter[user_key]['last_reset'] > 60:  # Сброс каждую минуту
+                        self.fast_deps_counter[user_key] = {'count': 1, 'last_reset': current_time}
+                    else:
+                        self.fast_deps_counter[user_key]['count'] += 1
+                    
+                    fast_count = self.fast_deps_counter[user_key]['count']
+                    
+                    # Предупреждение после 5 быстрых депов
+                    if fast_count == 5:
+                        warning_count = database.add_warning(user_id, chat_id, 'fast_deps')
+                        warning_msg = await bot.send_message(
+                            chat_id,
+                            f'⚠️ @{message.from_user.username if message.from_user.username else message.from_user.full_name}, '
+                            f'слишком быстро! ({fast_count}/10)\n'
+                            f'<i>При следующем нарушении будете заблокированы на 15 минут</i>',
+                            message_thread_id=message.message_thread_id
+                        )
+                        await asyncio.sleep(5)
+                        try:
+                            await warning_msg.delete()
+                        except:
+                            pass
+                    
+                    # Блокировка после 10 быстрых депов
+                    elif fast_count >= 10:
+                        database.block_user(user_id, chat_id, 'Слишком быстрые депы (спам)', 15)
+                        warning_msg = await bot.send_message(
+                            chat_id,
+                            f'🚫 @{message.from_user.username if message.from_user.username else message.from_user.full_name} заблокирован на 15 минут!\n'
+                            f'<b>Причина:</b> слишком быстрые депы (спам)',
+                            message_thread_id=message.message_thread_id
+                        )
+                        
+                        try:
+                            await message.delete()
+                        except:
+                            pass
+                        
+                        await asyncio.sleep(5)
+                        try:
+                            await warning_msg.delete()
+                        except:
+                            pass
+                        
+                        return
+            
+            # Обновляем время последнего депа
+            self.last_dice_time[user_key] = current_time
+            
+            # Добавляем деп в историю для проверки равномерных депов
+            if message.dice:
+                database.add_dice_to_history(user_id, chat_id, message.dice.emoji)
                 
-                # Создаем запрос INSERT OR REPLACE со всеми полями
-                if table == 'tries':
-                    self.cur.execute(
-                        "INSERT OR REPLACE INTO tries (id, chat_id, slots, dice, dart, bask, foot, bowl, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (id, chat_id, 
-                         current_data.get('slots', 0), 
-                         current_data.get('dice', 0),
-                         current_data.get('dart', 0),
-                         current_data.get('bask', 0),
-                         current_data.get('foot', 0),
-                         current_data.get('bowl', 0),
-                         current_data['timestamp'])
+                # Проверяем равномерные депы
+                if database.check_uniform_deps(user_id, chat_id):
+                    database.block_user(user_id, chat_id, 'Равномерные депы (бот)', 15)
+                    warning_msg = await bot.send_message(
+                        chat_id,
+                        f'🚫 @{message.from_user.username if message.from_user.username else message.from_user.full_name} заблокирован на 15 минут!\n'
+                        f'<b>Причина:</b> подозрительно равномерные депы (бот)',
+                        message_thread_id=message.message_thread_id
                     )
-                elif table == 'wins':
-                    self.cur.execute(
-                        "INSERT OR REPLACE INTO wins (id, chat_id, slots, dice, dart, bask, foot, bowl, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (id, chat_id,
-                         current_data.get('slots', 0),
-                         current_data.get('dice', 0),
-                         current_data.get('dart', 0),
-                         current_data.get('bask', 0),
-                         current_data.get('foot', 0),
-                         current_data.get('bowl', 0),
-                         current_data['timestamp'])
-                    )
-                elif table == 'jackpots':
-                    self.cur.execute(
-                        "INSERT OR REPLACE INTO jackpots (id, chat_id, slots, timestamp) VALUES (?, ?, ?, ?)",
-                        (id, chat_id, current_data.get('slots', 0), current_data['timestamp'])
-                    )
-            else:
-                # Если записи нет, создаем новую запись со всеми полями
-                if table == 'tries':
-                    base_values = {'slots': 0, 'dice': 0, 'dart': 0, 'bask': 0, 'foot': 0, 'bowl': 0}
-                    base_values[parameter] = 1
-                    self.cur.execute(
-                        "INSERT INTO tries (id, chat_id, slots, dice, dart, bask, foot, bowl, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (id, chat_id,
-                         base_values['slots'],
-                         base_values['dice'],
-                         base_values['dart'],
-                         base_values['bask'],
-                         base_values['foot'],
-                         base_values['bowl'],
-                         int(time.time()))
-                    )
-                elif table == 'wins':
-                    base_values = {'slots': 0, 'dice': 0, 'dart': 0, 'bask': 0, 'foot': 0, 'bowl': 0}
-                    base_values[parameter] = 1
-                    self.cur.execute(
-                        "INSERT INTO wins (id, chat_id, slots, dice, dart, bask, foot, bowl, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (id, chat_id,
-                         base_values['slots'],
-                         base_values['dice'],
-                         base_values['dart'],
-                         base_values['bask'],
-                         base_values['foot'],
-                         base_values['bowl'],
-                         int(time.time()))
-                    )
-                elif table == 'jackpots':
-                    self.cur.execute(
-                        "INSERT INTO jackpots (id, chat_id, slots, timestamp) VALUES (?, ?, ?, ?)",
-                        (id, chat_id, 1 if parameter == 'slots' else 0, int(time.time()))
-                    )
+                    
+                    try:
+                        await message.delete()
+                    except:
+                        pass
+                    
+                    await asyncio.sleep(5)
+                    try:
+                        await warning_msg.delete()
+                    except:
+                        pass
+                    
+                    return
             
-            self.database.conn.commit()
-        except Exception as e: 
-            raise UserError(e)
+            # Проверяем обычные условия
+            if message.forward_date:
+                return  # Игнорируем пересланные dice
 
-    def get_all(self, table: str, chat_id: int = None):
-        try:
-            if chat_id is not None:
-                self.cur.execute(f"SELECT * FROM {table} WHERE chat_id = ?", (chat_id,))
+            if message.dice and message.dice.emoji in games:
+                await process_dice(message, message.dice.emoji, message.dice.value, message.from_user.id)
             else:
-                self.cur.execute(f"SELECT * FROM {table}")
-            
-            columns = [description[0] for description in self.cur.description]
-            results = []
-            for row in self.cur.fetchall():
-                data = dict(zip(columns, row))
-                # Заменяем None на 0 для числовых полей
-                for key in list(data.keys()):
-                    if key not in ['id', 'chat_id', 'name', 'congratulate', 'timestamp'] and data[key] is None:
-                        data[key] = 0
-                results.append(data)
-            return results
-        except Exception as e: 
-            if "no such table" in str(e):
-                return []
-            raise UserError(e)
+                await message.reply(f'Неизвестный тип эмодзи: {message.dice.emoji if message.dice else "Нет эмодзи"}')
 
-    def get_time_filtered(self, table: str, chat_id: int, time_filter: str):
-        """time_filter: 'day' или 'week'"""
-        try:
-            time_threshold = int(time.time()) - (86400 if time_filter == 'day' else 604800)
+        # 🔥 ХЕНДЛЕР ДЛЯ ВСЕХ СООБЩЕНИЙ С ПРОВЕРКОЙ БЛОКИРОВКИ
+        @dp.message_handler(content_types=[ContentType.TEXT, ContentType.STICKER, ContentType.ANIMATION])
+        async def handle_all_messages_with_block(message: types.Message):
+            user_id = message.from_user.id
+            chat_id = message.chat.id
             
-            self.cur.execute(f"SELECT * FROM {table} WHERE chat_id = ? AND timestamp >= ?", (chat_id, time_threshold))
-            columns = [description[0] for description in self.cur.description]
-            results = []
-            for row in self.cur.fetchall():
-                data = dict(zip(columns, row))
-                # Заменяем None на 0 для числовых полей
-                for key in list(data.keys()):
-                    if key not in ['id', 'chat_id', 'name', 'congratulate', 'timestamp'] and data[key] is None:
-                        data[key] = 0
-                results.append(data)
-            return results
-        except Exception as e: 
-            if "no such table" in str(e):
-                return []
-            raise UserError(e)
+            # Проверяем блокировку
+            if database.is_user_blocked(user_id, chat_id):
+                # Отправляем сообщение только для команд /start, /casino
+                if message.text and message.text.lower() in ['/start', '/casino']:
+                    block_info = database.get_block_info(user_id, chat_id)
+                    if block_info:
+                        from datetime import datetime
+                        end_time = datetime.strptime(block_info['end'], '%Y-%m-%d %H:%M:%S')
+                        remaining = end_time - datetime.now()
+                        minutes_left = int(remaining.total_seconds() / 60)
+                        
+                        warning_msg = await bot.send_message(
+                            chat_id,
+                            f'🚫 Пользователь @{message.from_user.username if message.from_user.username else message.from_user.full_name} заблокирован!\n'
+                            f'⏰ <b>Причина:</b> {block_info["reason"]}\n'
+                            f'⏳ <b>Разблокировка через:</b> {minutes_left} минут',
+                            message_thread_id=message.message_thread_id
+                        )
+                        
+                        await asyncio.sleep(5)
+                        try:
+                            await warning_msg.delete()
+                        except:
+                            pass
+                
+                # Удаляем сообщение от заблокированного пользователя
+                try:
+                    await message.delete()
+                    logger.info(f"✅ Удалено сообщение от заблокированного пользователя {user_id}")
+                except Exception as e:
+                    logger.error(f"❌ Не удалось удалить сообщение: {e}")
+                return
+            
+            # Если пользователь не заблокирован, передаем обработку дальше
+            # Для /start и /casino будет вызван основной обработчик
+
+        async def process_dice(message: types.Message, emoji: str, value: int, user: int):
+            # 🔥 РЕГИСТРИРУЕМ ПОЛЬЗОВАТЕЛЯ ЕСЛИ ЕГО НЕТ
+            if not database.get('users', user):
+                database.add(user, message.from_user.full_name)
+
+            # Проверяем, что сообщение не переслано
+            if message.forward_date:
+                return  # Игнорируем пересланные сообщения
+
+            game = games[emoji]
+            game_name = game['name']
+            chat_id = message.chat.id
+
+            # Обновляем основную статистику
+            database.increment('tries', user, chat_id, game_name)
+
+            # Обновляем статистику периодов
+            tries = 1
+            wins = 0
+            jackpots = 0
+
+            async def congratulate():
+                await asyncio.sleep(1)
+                await bot.send_message(
+                    message.chat.id,
+                    f'🤑 <b>Выигрыш!</b> Поздравляем.',
+                    message_thread_id=message.message_thread_id
+                )
+
+            is_win = False
+            
+            # Проверяем джекпот (только для слотов)
+            if emoji == '🎰' and value == game.get('jackpot'):
+                database.increment('jackpots', user, chat_id, 'slots')
+                database.increment('wins', user, chat_id, 'slots')  # Учитываем джекпот как выигрыш
+                wins = 1
+                jackpots = 1
+                is_win = True
+                
+            # Проверяем обычные выигрыши
+            elif value in game['win']:
+                database.increment('wins', user, chat_id, game_name)
+                wins = 1
+                is_win = True
+
+            # 🔥 ОБНОВЛЯЕМ СЕРИИ ПОБЕД
+            current_streak, max_streak = database.update_win_streak(user, chat_id, game_name, is_win)
+            
+            # Если установлена новая максимальная серия, уведомляем
+            if is_win and current_streak > 3:  # Уведомляем только при серии от 4 побед
+                streak_message = ""
+                if current_streak == 4:
+                    streak_message = "🔥"
+                elif current_streak == 5:
+                    streak_message = "🔥🔥"
+                elif current_streak >= 6:
+                    streak_message = "🔥🔥🔥"
+                
+                if streak_message:
+                    await asyncio.sleep(1.5)
+                    await bot.send_message(
+                        message.chat.id,
+                        f'{streak_message} <b>Серия побед!</b> {current_streak} подряд!',
+                        message_thread_id=message.message_thread_id
+                    )
+
+            # Обновляем периодическую статистику
+            database.increment_period_stats(user, chat_id, game_name, tries, wins, jackpots)
+
+            # Поздравляем если это был выигрыш и включены уведомления
+            if is_win and database.get('users', user).get('congratulate'):
+                await congratulate()
+
+        @dp.message_handler(commands=['dice', 'slots', 'bask', 'dart', 'foot', 'bowl'])
+        async def roll_dice(message: types.Message):
+            user_id = message.from_user.id
+            chat_id = message.chat.id
+            
+            # Проверяем блокировку
+            if database.is_user_blocked(user_id, chat_id):
+                block_info = database.get_block_info(user_id, chat_id)
+                if block_info:
+                    from datetime import datetime
+                    end_time = datetime.strptime(block_info['end'], '%Y-%m-%d %H:%M:%S')
+                    remaining = end_time - datetime.now()
+                    minutes_left = int(remaining.total_seconds() / 60)
+                    
+                    warning_msg = await message.reply(
+                        f'🚫 Вы заблокированы!\n'
+                        f'⏰ <b>Причина:</b> {block_info["reason"]}\n'
+                        f'⏳ <b>Разблокировка через:</b> {minutes_left} минут\n\n'
+                        f'Если это ошибка, используйте /help',
+                        disable_notification=True
+                    )
+                    
+                    await asyncio.sleep(5)
+                    try:
+                        await warning_msg.delete()
+                    except:
+                        pass
+                return
+
+            # Проверяем анти-спам защиту для команд
+            current_time = time.time()
+            user_key = f"{user_id}_{chat_id}"
+            
+            if user_key in self.last_dice_time:
+                time_diff = current_time - self.last_dice_time[user_key]
+                
+                if time_diff < 0.3:
+                    # Увеличиваем счетчик быстрых депов
+                    if user_key not in self.fast_deps_counter:
+                        self.fast_deps_counter[user_key] = {'count': 1, 'last_reset': current_time}
+                    else:
+                        if current_time - self.fast_deps_counter[user_key]['last_reset'] > 60:
+                            self.fast_deps_counter[user_key] = {'count': 1, 'last_reset': current_time}
+                        else:
+                            self.fast_deps_counter[user_key]['count'] += 1
+                    
+                    fast_count = self.fast_deps_counter[user_key]['count']
+                    
+                    if fast_count >= 5:
+                        await message.reply("⏳ <b>Слишком быстро!</b> Подождите немного перед следующим броском.", disable_notification=True)
+                        return
+            
+            # Обновляем время последнего депа
+            self.last_dice_time[user_key] = current_time
+
+            command = message.text.lstrip('/')
+            emoji = next((k for k, v in games.items() if v['name'] == command), None)
+
+            if not emoji:
+                await message.reply("Неверная команда.")
+                return
+
+            dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
+            await process_dice(dice_message, emoji, dice_message.dice.value, user_id)
