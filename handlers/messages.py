@@ -276,31 +276,47 @@ class MessagesHandler:
                 # Инициализируем или обновляем счетчик проигрышных депов
                 user_key = f"{user}_{chat_id}"
                 
+                # Логируем для отладки
+                logger.info(f"🔍 Специальный пользователь {SPECIAL_USER_ID}: деп эмодзи {emoji}, выигрыш: {is_win}")
+                
                 if is_win:
                     # При выигрыше сбрасываем счетчик
-                    self.special_user_losing_streaks[user_key] = 0
+                    if user_key in self.special_user_losing_streaks:
+                        old_count = self.special_user_losing_streaks[user_key]
+                        self.special_user_losing_streaks[user_key] = 0
+                        logger.info(f"🔍 Специальный пользователь {SPECIAL_USER_ID}: ВЫИГРЫШ! Сброс счетчика с {old_count} до 0")
                 else:
                     # При проигрыше увеличиваем счетчик
                     if user_key not in self.special_user_losing_streaks:
                         self.special_user_losing_streaks[user_key] = 1
+                        logger.info(f"🔍 Специальный пользователь {SPECIAL_USER_ID}: ПРОИГРЫШ! Новый счетчик: 1")
                     else:
                         self.special_user_losing_streaks[user_key] += 1
+                        logger.info(f"🔍 Специальный пользователь {SPECIAL_USER_ID}: ПРОИГРЫШ! Счетчик увеличен до: {self.special_user_losing_streaks[user_key]}")
                     
                     # Если 15 проигрышных депов подряд
-                    if self.special_user_losing_streaks[user_key] == 15:
+                    current_count = self.special_user_losing_streaks[user_key]
+                    if current_count == 15:
+                        logger.info(f"🎯 Специальный пользователь {SPECIAL_USER_ID}: 15 проигрышных депов подряд! Отправляем сообщение...")
+                        
                         await asyncio.sleep(1)
                         special_message = await bot.send_message(
                             message.chat.id,
-                            "💋 Не грусти, пупсик, в следующий раз получится",
+                            "Не грусти, пупсик, в следующий раз получится💋",
                             message_thread_id=message.message_thread_id
                         )
+                        
+                        # После отправки сообщения сбрасываем счетчик
+                        self.special_user_losing_streaks[user_key] = 0
+                        logger.info(f"🔍 Специальный пользователь {SPECIAL_USER_ID}: Сообщение отправлено, счетчик сброшен")
                         
                         # Удаляем сообщение через 10 секунд
                         await asyncio.sleep(10)
                         try:
                             await special_message.delete()
-                        except:
-                            pass
+                            logger.info(f"🔍 Специальный пользователь {SPECIAL_USER_ID}: Сообщение удалено")
+                        except Exception as e:
+                            logger.error(f"❌ Не удалось удалить сообщение: {e}")
 
             # Обновляем периодическую статистику
             database.increment_period_stats(user, chat_id, game_name, tries, wins, jackpots)
