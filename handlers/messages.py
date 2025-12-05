@@ -244,7 +244,7 @@ class MessagesHandler:
                         await asyncio.sleep(1)
                         special_message = await bot.send_message(
                             message.chat.id,
-                            "💋 Не грусти, пупсик, в следующий раз получится",
+                            "Не грусти, пупсик, в следующий раз получится💋",
                             message_thread_id=message.message_thread_id
                         )
                         
@@ -324,3 +324,4 @@ class MessagesHandler:
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
             await process_dice(dice_message, emoji, dice_message.dice.value, user_id)
+
