@@ -52,8 +52,14 @@ ADMIN_IDS = [1773287874]  # Только вы как админ
 for admin_id in ADMIN_IDS:
     USERS.add_admin(admin_id)
 
-# Список чатов для уведомлений админов
-ADMIN_CHAT_IDS = ADMIN_IDS
+# 🔥 СПИСОК ИЗВЕСТНЫХ УЧАСТНИКОВ
+KNOWN_USERS = {
+    1014610866: "Анжело",
+    5208717293: "Лиза", 
+    772615435: "Саша ʕ≧ᴥ≦ʔ",
+    1789058587: "Владимир",
+    751379478: "Степа"
+}
 
 # 🔥 НОВЫЙ МИДЛВАРЬ ДЛЯ РУЧНОЙ БЛОКИРОВКИ ПОЛЬЗОВАТЕЛЕЙ
 class BlockedUsersMiddleware(BaseMiddleware):
@@ -73,7 +79,7 @@ class BlockedUsersMiddleware(BaseMiddleware):
                     remaining = end_time - datetime.now()
                     minutes_left = int(remaining.total_seconds() / 60)
                     
-                    # 🔥 УПРОЩЕННОЕ СООБЩЕНИЕ О БЛОКИРОВКЕ (без причины)
+                    # 🔥 УПРОЩЕННОЕ СООБЩЕНИЕ О БЛОКИРОВКЕ
                     warning_msg = await BOT.send_message(
                         chat_id,
                         f'🚫 Пользователь @{message.from_user.username if message.from_user.username else message.from_user.full_name} заблокирован!\n'
@@ -114,10 +120,6 @@ class UserRegistrationMiddleware(BaseMiddleware):
 DP.middleware.setup(BlockedUsersMiddleware())  # ПЕРВЫЙ - ручная блокировка
 DP.middleware.setup(UserRegistrationMiddleware())  # ВТОРОЙ - регистрация
 
-# 🔥 СОСТОЯНИЯ ДЛЯ СИСТЕМЫ ПОМОЩИ
-class HelpStates(StatesGroup):
-    waiting_for_message = State()
-
 # main menu handler
 @DP.message_handler(commands=['casino', 'start'])
 async def main_menu(message: types.Message):
@@ -144,8 +146,7 @@ async def main_menu(message: types.Message):
 
 Добро пожаловать в казино-бот! Используйте кнопки ниже для навигации.
 
-ℹ️ <b>Информация:</b> /info
-🆘 <b>Помощь:</b> /help""",
+ℹ️ <b>Информация:</b> /info""",
         message_thread_id = message.message_thread_id if hasattr(message, 'message_thread_id') else None,
         reply_markup=keyboard
     )
@@ -194,94 +195,7 @@ async def info_command(message: types.Message):
         reply_markup=keyboard
     )
 
-# 🔥 НОВАЯ КОМАНДА /help
-@DP.message_handler(commands=['help'])
-async def help_command(message: types.Message):
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    keyboard.add(KeyboardButton('📝 Написать сообщение'))
-    keyboard.add(KeyboardButton('❌ Отмена'))
-    
-    await BOT.send_message(
-        message.chat.id,
-        "🆘 <b>Центр помощи</b>\n\n"
-        "Если у вас возникли проблемы или вас заблокировали по ошибке, "
-        "нажмите кнопку ниже, чтобы написать сообщение администраторам.\n\n"
-        "<i>Администраторы ответят вам в ближайшее время.</i>",
-        reply_markup=keyboard
-    )
-
-# Обработчик кнопок помощи
-@DP.message_handler(lambda message: message.text == '📝 Написать сообщение')
-async def write_help_message(message: types.Message):
-    await BOT.send_message(
-        message.chat.id,
-        "✍️ <b>Напишите ваше сообщение:</b>\n\n"
-        "<i>Опишите вашу проблему подробно. Администраторы увидят это сообщение.</i>",
-        reply_markup=ReplyKeyboardRemove()
-    )
-    
-    # Устанавливаем состояние для ожидания сообщения
-    await HelpStates.waiting_for_message.set()
-
-# Обработчик отмены
-@DP.message_handler(lambda message: message.text == '❌ Отмена', state='*')
-async def cancel_help(message: types.Message, state: FSMContext):
-    await state.finish()
-    await BOT.send_message(
-        message.chat.id,
-        "❌ <b>Отменено</b>",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
-# Обработчик текста помощи
-@DP.message_handler(state=HelpStates.waiting_for_message, content_types=ContentType.TEXT)
-async def process_help_message(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-    user_name = message.from_user.full_name
-    username = f"@{message.from_user.username}" if message.from_user.username else "нет username"
-    
-    # Сохраняем сообщение в базе данных
-    message_id = USERS.add_help_message(user_id, chat_id, message.text)
-    
-    if message_id:
-        # Отправляем уведомление админам
-        for admin_id in ADMIN_CHAT_IDS:
-            try:
-                await BOT.send_message(
-                    admin_id,
-                    f"🆘 <b>НОВОЕ СООБЩЕНИЕ ПОМОЩИ</b>\n\n"
-                    f"👤 <b>Пользователь:</b> {user_name}\n"
-                    f"🔗 <b>Username:</b> {username}\n"
-                    f"🆔 <b>ID:</b> {user_id}\n"
-                    f"💬 <b>Сообщение ID:</b> {message_id}\n\n"
-                    f"📝 <b>Текст:</b>\n{message.text}\n\n"
-                    f"📌 <b>Действия:</b>\n"
-                    f"/unblock_{user_id}_{chat_id} - разблокировать\n"
-                    f"/block_{user_id}_{chat_id}_причина - заблокировать (на 15 мин)\n"
-                    f"/viewhelp_{message_id} - просмотреть детали"
-                )
-            except Exception as e:
-                logger.error(f"Не удалось отправить уведомление админу {admin_id}: {e}")
-        
-        await BOT.send_message(
-            chat_id,
-            "✅ <b>Сообщение отправлено!</b>\n\n"
-            "Администраторы получили ваше сообщение и ответят в ближайшее время.\n\n"
-            "<i>Спасибо за обращение!</i>",
-            reply_markup=ReplyKeyboardRemove()
-        )
-    else:
-        await BOT.send_message(
-            chat_id,
-            "❌ <b>Ошибка!</b>\n\n"
-            "Не удалось отправить сообщение. Попробуйте позже.",
-            reply_markup=ReplyKeyboardRemove()
-        )
-    
-    await state.finish()
-
-# 🔥 ОБНОВЛЕННАЯ АДМИН ПАНЕЛЬ
+# 🔥 ПРОСТАЯ АДМИН ПАНЕЛЬ
 @DP.callback_query_handler(lambda c: c.data == 'admin')
 async def admin_panel(callback: types.CallbackQuery):
     if not USERS.is_admin(callback.from_user.id):
@@ -290,12 +204,12 @@ async def admin_panel(callback: types.CallbackQuery):
 
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
-        InlineKeyboardButton('♻️ Сбросить ВСЕ рейтинги', callback_data='admin-reset-all'),
-        InlineKeyboardButton('👥 Заблокированные', callback_data='admin-blocked-list')
+        InlineKeyboardButton('👥 Заблокировать пользователя', callback_data='admin-block-user'),
+        InlineKeyboardButton('✅ Разблокировать пользователя', callback_data='admin-unblock-user')
     )
     keyboard.add(
-        InlineKeyboardButton('🆘 Сообщения помощи', callback_data='admin-help-messages'),
-        InlineKeyboardButton('🔍 Команды блокировки', callback_data='admin-block-commands')
+        InlineKeyboardButton('📋 Список заблокированных', callback_data='admin-blocked-list'),
+        InlineKeyboardButton('♻️ Сбросить ВСЕ рейтинги', callback_data='admin-reset-all')
     )
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='back-to-main'))
 
@@ -304,6 +218,206 @@ async def admin_panel(callback: types.CallbackQuery):
         "Выберите действие:",
         reply_markup=keyboard
     )
+    await callback.answer()
+
+# Выбор пользователя для блокировки
+@DP.callback_query_handler(lambda c: c.data == 'admin-block-user')
+async def admin_block_user(callback: types.CallbackQuery):
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
+    
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    
+    # Добавляем кнопки для каждого известного пользователя
+    for user_id, name in KNOWN_USERS.items():
+        keyboard.add(InlineKeyboardButton(f'👤 {name}', callback_data=f'block_select_user-{user_id}'))
+    
+    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
+    
+    await callback.message.edit_text(
+        "👥 <b>Выберите пользователя для блокировки:</b>",
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+# Выбор времени блокировки
+@DP.callback_query_handler(lambda c: c.data.startswith('block_select_user-'))
+async def admin_block_select_time(callback: types.CallbackQuery):
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
+    
+    user_id = int(callback.data.split('-')[1])
+    user_name = KNOWN_USERS.get(user_id, f"ID {user_id}")
+    
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton('⏰ 15 минут', callback_data=f'block_confirm-{user_id}-15'),
+        InlineKeyboardButton('⏰ 30 минут', callback_data=f'block_confirm-{user_id}-30')
+    )
+    keyboard.add(
+        InlineKeyboardButton('⏰ 1 час', callback_data=f'block_confirm-{user_id}-60'),
+        InlineKeyboardButton('⏰ 3 часа', callback_data=f'block_confirm-{user_id}-180')
+    )
+    keyboard.add(
+        InlineKeyboardButton('⏰ 6 часов', callback_data=f'block_confirm-{user_id}-360'),
+        InlineKeyboardButton('⏰ 12 часов', callback_data=f'block_confirm-{user_id}-720')
+    )
+    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin-block-user'))
+    
+    await callback.message.edit_text(
+        f"👤 <b>Пользователь:</b> {user_name}\n"
+        f"🆔 <b>ID:</b> {user_id}\n\n"
+        "⏳ <b>Выберите длительность блокировки:</b>",
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+# Подтверждение и выполнение блокировки
+@DP.callback_query_handler(lambda c: c.data.startswith('block_confirm-'))
+async def admin_block_confirm(callback: types.CallbackQuery):
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
+    
+    data_parts = callback.data.split('-')
+    user_id = int(data_parts[1])
+    minutes = int(data_parts[2])
+    user_name = KNOWN_USERS.get(user_id, f"ID {user_id}")
+    
+    # Предполагаем, что блокировка в основном чате (можно настроить)
+    chat_id = callback.message.chat.id
+    
+    # Блокируем пользователя
+    success = USERS.block_user(user_id, chat_id, "Нарушение правил", minutes)
+    
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton('🔙 Назад в админку', callback_data='admin'))
+    
+    if success:
+        await callback.message.edit_text(
+            f"✅ <b>Пользователь заблокирован!</b>\n\n"
+            f"👤 <b>Имя:</b> {user_name}\n"
+            f"🆔 <b>ID:</b> {user_id}\n"
+            f"⏳ <b>Длительность:</b> {minutes} минут\n\n"
+            f"Пользователь получит уведомление о блокировке.",
+            reply_markup=keyboard
+        )
+        
+        # Уведомляем пользователя
+        try:
+            await BOT.send_message(
+                user_id,
+                f"🚫 <b>Вы были заблокированы!</b>\n\n"
+                f"⏳ <b>Длительность:</b> {minutes} минут\n\n"
+                f"Блокировка автоматически снимется через указанное время."
+            )
+        except:
+            pass  # Пользователь мог заблокировать бота
+    else:
+        await callback.message.edit_text(
+            f"❌ <b>Ошибка блокировки!</b>\n\n"
+            f"Не удалось заблокировать пользователя {user_name}.",
+            reply_markup=keyboard
+        )
+    
+    await callback.answer()
+
+# Выбор пользователя для разблокировки
+@DP.callback_query_handler(lambda c: c.data == 'admin-unblock-user')
+async def admin_unblock_user(callback: types.CallbackQuery):
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
+    
+    # Получаем список заблокированных пользователей
+    blocked_users = USERS.get_all_blocked_users()
+    
+    if not blocked_users:
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
+        
+        await callback.message.edit_text(
+            "📭 <b>Нет заблокированных пользователей</b>",
+            reply_markup=keyboard
+        )
+        await callback.answer()
+        return
+    
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    
+    for user in blocked_users:
+        user_id = user['user_id']
+        user_name = KNOWN_USERS.get(user_id, f"ID {user_id}")
+        minutes_left = 0
+        
+        # Вычисляем оставшееся время
+        try:
+            end_time = datetime.strptime(user['end'], '%Y-%m-%d %H:%M:%S')
+            remaining = end_time - datetime.now()
+            minutes_left = max(0, int(remaining.total_seconds() / 60))
+        except:
+            pass
+        
+        keyboard.add(InlineKeyboardButton(
+            f'✅ {user_name} ({minutes_left} мин осталось)', 
+            callback_data=f'unblock_user-{user_id}'
+        ))
+    
+    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
+    
+    await callback.message.edit_text(
+        "✅ <b>Выберите пользователя для разблокировки:</b>\n\n"
+        "<i>В скобках указано оставшееся время блокировки</i>",
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+# Выполнение разблокировки
+@DP.callback_query_handler(lambda c: c.data.startswith('unblock_user-'))
+async def admin_unblock_execute(callback: types.CallbackQuery):
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
+    
+    user_id = int(callback.data.split('-')[1])
+    user_name = KNOWN_USERS.get(user_id, f"ID {user_id}")
+    
+    # Предполагаем, что разблокировка в основном чате (можно настроить)
+    chat_id = callback.message.chat.id
+    
+    # Разблокируем пользователя
+    success = USERS.unblock_user(user_id, chat_id)
+    
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton('🔙 Назад в админку', callback_data='admin'))
+    
+    if success:
+        await callback.message.edit_text(
+            f"✅ <b>Пользователь разблокирован!</b>\n\n"
+            f"👤 <b>Имя:</b> {user_name}\n"
+            f"🆔 <b>ID:</b> {user_id}\n\n"
+            f"Пользователь получит уведомление о разблокировке.",
+            reply_markup=keyboard
+        )
+        
+        # Уведомляем пользователя
+        try:
+            await BOT.send_message(
+                user_id,
+                "✅ <b>Вы были разблокированы!</b>\n\n"
+                "Администратор снял с вас блокировку. Теперь вы можете снова использовать бота."
+            )
+        except:
+            pass  # Пользователь мог заблокировать бота
+    else:
+        await callback.message.edit_text(
+            f"❌ <b>Ошибка разблокировки!</b>\n\n"
+            f"Не удалось разблокировать пользователя {user_name}.",
+            reply_markup=keyboard
+        )
+    
     await callback.answer()
 
 # Список заблокированных пользователей
@@ -320,198 +434,22 @@ async def admin_blocked_list(callback: types.CallbackQuery):
     else:
         text = "🚫 <b>Заблокированные пользователи:</b>\n\n"
         for i, user in enumerate(blocked_users, 1):
-            from datetime import datetime
+            user_id = user['user_id']
+            user_name = KNOWN_USERS.get(user_id, f"ID {user_id}")
+            
             end_time = datetime.strptime(user['end'], '%Y-%m-%d %H:%M:%S')
             remaining = end_time - datetime.now()
             minutes_left = max(0, int(remaining.total_seconds() / 60))
             
-            text += f"{i}. <b>ID:</b> {user['user_id']}\n"
-            text += f"   <b>Причина:</b> {user['reason']}\n"
-            text += f"   <b>Осталось:</b> {minutes_left} мин\n"
-            text += f"   <b>Действие:</b> /unblock_{user['user_id']}_{user['chat_id']}\n\n"
+            text += f"{i}. <b>{user_name}</b>\n"
+            text += f"   ⏳ <b>Осталось:</b> {minutes_left} минут\n"
+            text += f"   🕒 <b>Причина:</b> {user['reason']}\n\n"
     
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
     
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
-
-# Сообщения помощи
-@DP.callback_query_handler(lambda c: c.data == 'admin-help-messages')
-async def admin_help_messages(callback: types.CallbackQuery):
-    if not USERS.is_admin(callback.from_user.id):
-        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-        return
-    
-    help_messages = USERS.get_pending_help_messages()
-    
-    if not help_messages:
-        text = "📭 <b>Нет новых сообщений помощи</b>"
-    else:
-        text = f"🆘 <b>Сообщения помощи ({len(help_messages)}):</b>\n\n"
-        for i, msg in enumerate(help_messages, 1):
-            text += f"{i}. <b>ID сообщения:</b> {msg['message_id']}\n"
-            text += f"   <b>Пользователь:</b> ID {msg['user_id']}\n"
-            text += f"   <b>Действие:</b> /viewhelp_{msg['message_id']}\n\n"
-    
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
-    
-    await callback.message.edit_text(text, reply_markup=keyboard)
-    await callback.answer()
-
-# Команды блокировки
-@DP.callback_query_handler(lambda c: c.data == 'admin-block-commands')
-async def admin_block_commands(callback: types.CallbackQuery):
-    if not USERS.is_admin(callback.from_user.id):
-        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-        return
-    
-    text = "🔒 <b>Команды для блокировки пользователей:</b>\n\n"
-    text += "📌 <b>Заблокировать пользователя:</b>\n"
-    text += "/block_userId_chatId_причина\n"
-    text += "Пример: /block_123456789_987654321_спам\n\n"
-    text += "📌 <b>Разблокировать пользователя:</b>\n"
-    text += "/unblock_userId_chatId\n"
-    text += "Пример: /unblock_123456789_987654321\n\n"
-    text += "📌 <b>Просмотреть сообщение помощи:</b>\n"
-    text += "/viewhelp_messageId\n"
-    text += "Пример: /viewhelp_42\n\n"
-    text += "📌 <b>Закрыть обращение:</b>\n"
-    text += "/closehelp_messageId\n"
-    text += "Пример: /closehelp_42"
-    
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
-    
-    await callback.message.edit_text(text, reply_markup=keyboard)
-    await callback.answer()
-
-# Команда для блокировки пользователя
-@DP.message_handler(lambda message: message.text and message.text.startswith('/block_'))
-async def block_user_command(message: types.Message):
-    if not USERS.is_admin(message.from_user.id):
-        return
-    
-    try:
-        parts = message.text.split('_')
-        if len(parts) >= 4:
-            user_id = int(parts[1])
-            chat_id = int(parts[2])
-            reason = '_'.join(parts[3:])  # Причина может содержать подчеркивания
-            
-            # Блокируем на 15 минут по умолчанию
-            success = USERS.block_user(user_id, chat_id, reason, 15)
-            
-            if success:
-                await message.reply(f"✅ Пользователь {user_id} заблокирован в чате {chat_id} на 15 минут!\n<b>Причина:</b> {reason}")
-                
-                # 🔥 УПРОЩЕННОЕ УВЕДОМЛЕНИЕ ПОЛЬЗОВАТЕЛЮ (без причины)
-                try:
-                    await BOT.send_message(
-                        user_id,
-                        f"🚫 <b>Вы были заблокированы!</b>\n\n"
-                        f"⏳ <b>Длительность:</b> 15 минут\n\n"
-                        f"Если это ошибка, используйте команду /help"
-                    )
-                except:
-                    pass  # Пользователь мог заблокировать бота
-            else:
-                await message.reply(f"❌ Не удалось заблокировать пользователя {user_id}")
-    except ValueError:
-        await message.reply("❌ Неверный формат команды. Используйте: /block_userId_chatId_причина")
-
-# Команда для разблокировки пользователя
-@DP.message_handler(lambda message: message.text and message.text.startswith('/unblock_'))
-async def unblock_user_command(message: types.Message):
-    if not USERS.is_admin(message.from_user.id):
-        return
-    
-    try:
-        parts = message.text.split('_')
-        if len(parts) == 3:
-            user_id = int(parts[1])
-            chat_id = int(parts[2])
-            
-            success = USERS.unblock_user(user_id, chat_id)
-            
-            if success:
-                await message.reply(f"✅ Пользователь {user_id} разблокирован в чате {chat_id}")
-                
-                # Уведомляем пользователя
-                try:
-                    await BOT.send_message(
-                        user_id,
-                        "✅ <b>Вы были разблокированы!</b>\n\n"
-                        "Администратор снял с вас блокировку. Теперь вы можете снова использовать бота."
-                    )
-                except:
-                    pass  # Пользователь мог заблокировать бота
-            else:
-                await message.reply(f"❌ Не удалось разблокировать пользователя {user_id}")
-    except ValueError:
-        await message.reply("❌ Неверный формат команды. Используйте: /unblock_userId_chatId")
-
-# Команда для просмотра сообщения помощи
-@DP.message_handler(lambda message: message.text and message.text.startswith('/viewhelp_'))
-async def view_help_message_command(message: types.Message):
-    if not USERS.is_admin(message.from_user.id):
-        return
-    
-    try:
-        message_id = int(message.text.split('_')[1])
-        
-        # Получаем все сообщения и ищем нужное
-        help_messages = USERS.get_pending_help_messages()
-        target_msg = None
-        
-        for msg in help_messages:
-            if msg['message_id'] == message_id:
-                target_msg = msg
-                break
-        
-        if target_msg:
-            # Получаем информацию о пользователе
-            user_info = USERS.get('users', target_msg['user_id'])
-            user_name = user_info['name'] if user_info else "Неизвестно"
-            
-            text = f"📋 <b>Сообщение помощи #{message_id}</b>\n\n"
-            text += f"👤 <b>Пользователь:</b> {user_name}\n"
-            text += f"🆔 <b>ID:</b> {target_msg['user_id']}\n"
-            text += f"💬 <b>Чат:</b> {target_msg['chat_id']}\n"
-            text += f"🕒 <b>Время:</b> {target_msg['timestamp']}\n\n"
-            text += f"📝 <b>Текст сообщения:</b>\n{target_msg['message_text']}\n\n"
-            text += f"📌 <b>Действия:</b>\n"
-            text += f"/block_{target_msg['user_id']}_{target_msg['chat_id']}_нарушение - заблокировать (15 мин)\n"
-            text += f"/unblock_{target_msg['user_id']}_{target_msg['chat_id']} - разблокировать\n"
-            text += f"/closehelp_{message_id} - закрыть обращение"
-            
-            await message.reply(text)
-            
-            # Помечаем как просмотренное
-            USERS.update_help_message_status(message_id, 'viewed')
-        else:
-            await message.reply("❌ Сообщение не найдено или уже обработано")
-    except (ValueError, IndexError):
-        await message.reply("❌ Неверный формат команды. Используйте: /viewhelp_messageId")
-
-# Команда для закрытия обращения
-@DP.message_handler(lambda message: message.text and message.text.startswith('/closehelp_'))
-async def close_help_message_command(message: types.Message):
-    if not USERS.is_admin(message.from_user.id):
-        return
-    
-    try:
-        message_id = int(message.text.split('_')[1])
-        
-        success = USERS.update_help_message_status(message_id, 'closed')
-        
-        if success:
-            await message.reply(f"✅ Обращение #{message_id} закрыто")
-        else:
-            await message.reply(f"❌ Не удалось закрыть обращение #{message_id}")
-    except (ValueError, IndexError):
-        await message.reply("❌ Неверный формат команды. Используйте: /closehelp_messageId")
 
 @DP.callback_query_handler(lambda c: c.data == 'admin-reset-all')
 async def admin_reset_all_ratings(callback: types.CallbackQuery):
@@ -562,19 +500,6 @@ async def congratulate(message: types.Message):
             message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
         )
 
-# Команда для добавления админов
-@DP.message_handler(commands=['addadmin'])
-async def add_admin(message: types.Message):
-    if not USERS.is_admin(message.from_user.id):
-        return
-
-    try:
-        user_id = int(message.get_args())
-        USERS.add_admin(user_id)
-        await message.reply(f"✅ Пользователь {user_id} добавлен как администратор")
-    except ValueError:
-        await message.reply("❌ Используйте: /addadmin <user_id>")
-
 # Команда для проверки текущей серии
 @DP.message_handler(commands=['mystreak'])
 async def my_streak(message: types.Message):
@@ -607,34 +532,6 @@ async def my_streak(message: types.Message):
     await BOT.send_message(
         message.chat.id,
         '\n'.join(text_lines),
-        message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
-    )
-
-# Команда для проверки статуса блокировки
-@DP.message_handler(commands=['mystatus'])
-async def my_status(message: types.Message):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-    
-    if USERS.is_user_blocked(user_id, chat_id):
-        block_info = USERS.get_block_info(user_id, chat_id)
-        if block_info:
-            from datetime import datetime
-            end_time = datetime.strptime(block_info['end'], '%Y-%m-%d %H:%M:%S')
-            remaining = end_time - datetime.now()
-            minutes_left = max(0, int(remaining.total_seconds() / 60))
-            
-            # 🔥 УПРОЩЕННОЕ СООБЩЕНИЕ ДЛЯ ПОЛЬЗОВАТЕЛЯ
-            text = f"🚫 <b>Вы заблокированы!</b>\n\n"
-            text += f"⏳ <b>Разблокировка через:</b> {minutes_left} минут\n\n"
-            text += f"Если это ошибка, используйте команду /help"
-    else:
-        text = f"✅ <b>Статус: Активен</b>\n\n"
-        text += f"Теперь вы можете использовать все команды бота."
-    
-    await BOT.send_message(
-        message.chat.id,
-        text,
         message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
     )
 
