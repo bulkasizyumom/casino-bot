@@ -17,9 +17,6 @@ class MessagesHandler:
         self.special_user_losing_streaks = {}  # Счетчик проигрышных депов для специального пользователя
     
     def register(self, dp, bot, games: dict, database: Users):
-        # 🔥 ИГРОВЫЕ ЭМОДЗИ КОТОРЫЕ БЛОКИРУЕМ
-        GAME_EMOJIS = ['🎰', '🎲', '🏀', '🎯', '⚽', '🎳']  # Все игровые эмодзи
-        
         # 🔥 СПЕЦИАЛЬНЫЙ ПОЛЬЗОВАТЕЛЬ
         SPECIAL_USER_ID = 751379478  # ID пользователя для специальных сообщений
         
@@ -29,7 +26,7 @@ class MessagesHandler:
             user_id = message.from_user.id
             chat_id = message.chat.id
             
-            # 🔥 ПРОВЕРЯЕМ РУЧНУЮ БЛОКИРОВКУ ЧЕРЕЗ БАЗУ ДАННЫХ (ТОЛЬКО ОТ АДМИНА)
+            # 🔥 ПРОВЕРЯЕМ РУЧНУЮ БЛОКИРОВКУ
             if database.is_user_blocked(user_id, chat_id):
                 block_info = database.get_block_info(user_id, chat_id)
                 if block_info:
@@ -38,7 +35,7 @@ class MessagesHandler:
                     remaining = end_time - datetime.now()
                     minutes_left = int(remaining.total_seconds() / 60)
                     
-                    # 🔥 УПРОЩЕННОЕ СООБЩЕНИЕ О БЛОКИРОВКЕ (без причины)
+                    # УПРОЩЕННОЕ СООБЩЕНИЕ О БЛОКИРОВКЕ
                     warning_msg = await bot.send_message(
                         chat_id,
                         f'🚫 Пользователь @{message.from_user.username if message.from_user.username else message.from_user.full_name} заблокирован!\n'
@@ -61,7 +58,7 @@ class MessagesHandler:
                         pass
                 return  # Полностью прекращаем обработку
             
-            # Проверяем анти-спам защиту для быстрых депов (только игнорирование, без блокировки)
+            # Проверяем быстрые депы (только игнорирование, без блокировки)
             current_time = time.time()
             user_key = f"{user_id}_{chat_id}"
             
@@ -70,7 +67,6 @@ class MessagesHandler:
                 time_diff = current_time - self.last_dice_time[user_key]
                 
                 if time_diff < 0.3:  # Слишком быстро
-                    # 🔥 ТОЛЬКО ПРЕДУПРЕЖДЕНИЕ, БЕЗ БЛОКИРОВКИ
                     logger.warning(
                         f"⏰ СЛИШКОМ БЫСТРО: UserID={user_id}, "
                         f"Name={message.from_user.full_name}, "
@@ -78,21 +74,7 @@ class MessagesHandler:
                     )
                     
                     # Просто игнорируем этот деп (не засчитываем в статистике)
-                    await asyncio.sleep(0.5)  # Маленькая задержка
-                    
-                    # Отправляем краткое уведомление (опционально)
-                    try:
-                        warning_msg = await bot.send_message(
-                            chat_id,
-                            f'⏳ <i>Слишком быстро! Этот деп не будет учтен.</i>',
-                            message_thread_id=message.message_thread_id,
-                            disable_notification=True
-                        )
-                        await asyncio.sleep(3)
-                        await warning_msg.delete()
-                    except:
-                        pass
-                    
+                    await asyncio.sleep(0.5)
                     return  # Игнорируем этот деп
             
             # Обновляем время последнего депа
@@ -124,7 +106,6 @@ class MessagesHandler:
                         remaining = end_time - datetime.now()
                         minutes_left = int(remaining.total_seconds() / 60)
                         
-                        # 🔥 УПРОЩЕННОЕ СООБЩЕНИЕ О БЛОКИРОВКЕ (без причины)
                         warning_msg = await bot.send_message(
                             chat_id,
                             f'🚫 Пользователь @{message.from_user.username if message.from_user.username else message.from_user.full_name} заблокирован!\n'
@@ -218,29 +199,19 @@ class MessagesHandler:
                 # Инициализируем или обновляем счетчик проигрышных депов
                 user_key = f"{user}_{chat_id}"
                 
-                # Логируем для отладки
-                logger.info(f"🔍 Специальный пользователь {SPECIAL_USER_ID}: деп эмодзи {emoji}, выигрыш: {is_win}")
-                
                 if is_win:
                     # При выигрыше сбрасываем счетчик
                     if user_key in self.special_user_losing_streaks:
-                        old_count = self.special_user_losing_streaks[user_key]
                         self.special_user_losing_streaks[user_key] = 0
-                        logger.info(f"🔍 Специальный пользователь {SPECIAL_USER_ID}: ВЫИГРЫШ! Сброс счетчика с {old_count} до 0")
                 else:
                     # При проигрыше увеличиваем счетчик
                     if user_key not in self.special_user_losing_streaks:
                         self.special_user_losing_streaks[user_key] = 1
-                        logger.info(f"🔍 Специальный пользователь {SPECIAL_USER_ID}: ПРОИГРЫШ! Новый счетчик: 1")
                     else:
                         self.special_user_losing_streaks[user_key] += 1
-                        logger.info(f"🔍 Специальный пользователь {SPECIAL_USER_ID}: ПРОИГРЫШ! Счетчик увеличен до: {self.special_user_losing_streaks[user_key]}")
                     
                     # Если 15 проигрышных депов подряд
-                    current_count = self.special_user_losing_streaks[user_key]
-                    if current_count == 15:
-                        logger.info(f"🎯 Специальный пользователь {SPECIAL_USER_ID}: 15 проигрышных депов подряд! Отправляем сообщение...")
-                        
+                    if self.special_user_losing_streaks[user_key] == 15:
                         await asyncio.sleep(1)
                         special_message = await bot.send_message(
                             message.chat.id,
@@ -250,15 +221,13 @@ class MessagesHandler:
                         
                         # После отправки сообщения сбрасываем счетчик
                         self.special_user_losing_streaks[user_key] = 0
-                        logger.info(f"🔍 Специальный пользователь {SPECIAL_USER_ID}: Сообщение отправлено, счетчик сброшен")
                         
                         # Удаляем сообщение через 10 секунд
                         await asyncio.sleep(10)
                         try:
                             await special_message.delete()
-                            logger.info(f"🔍 Специальный пользователь {SPECIAL_USER_ID}: Сообщение удалено")
-                        except Exception as e:
-                            logger.error(f"❌ Не удалось удалить сообщение: {e}")
+                        except:
+                            pass
 
             # Обновляем периодическую статистику
             database.increment_period_stats(user, chat_id, game_name, tries, wins, jackpots)
@@ -281,11 +250,9 @@ class MessagesHandler:
                     remaining = end_time - datetime.now()
                     minutes_left = int(remaining.total_seconds() / 60)
                     
-                    # 🔥 УПРОЩЕННОЕ СООБЩЕНИЕ ДЛЯ ЗАБЛОКИРОВАННОГО ПОЛЬЗОВАТЕЛЯ
                     warning_msg = await message.reply(
                         f'🚫 Вы заблокированы!\n'
-                        f'⏳ <b>Разблокировка через:</b> {minutes_left} минут\n\n'
-                        f'Если это ошибка, используйте /help',
+                        f'⏳ <b>Разблокировка через:</b> {minutes_left} минут',
                         disable_notification=True
                     )
                     
@@ -304,7 +271,6 @@ class MessagesHandler:
                 time_diff = current_time - self.last_dice_time[user_key]
                 
                 if time_diff < 0.3:
-                    # 🔥 ТОЛЬКО ПРЕДУПРЕЖДЕНИЕ, БЕЗ БЛОКИРОВКИ
                     await message.reply(
                         "⏳ <b>Слишком быстро!</b> Подождите немного перед следующим броском.\n"
                         "<i>Этот бросок не будет засчитан в рейтингах.</i>",
@@ -324,4 +290,3 @@ class MessagesHandler:
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
             await process_dice(dice_message, emoji, dice_message.dice.value, user_id)
-
