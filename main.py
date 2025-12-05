@@ -15,7 +15,7 @@ from aiogram.dispatcher.handler import CancelHandler
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.types import ContentType, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import ContentType
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 
@@ -204,12 +204,12 @@ async def admin_panel(callback: types.CallbackQuery):
 
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
-        InlineKeyboardButton('👥 Заблокировать пользователя', callback_data='admin-block-user'),
-        InlineKeyboardButton('✅ Разблокировать пользователя', callback_data='admin-unblock-user')
+        InlineKeyboardButton('👥 Заблокировать', callback_data='admin-block-user'),
+        InlineKeyboardButton('✅ Разблокировать', callback_data='admin-unblock-user')
     )
     keyboard.add(
         InlineKeyboardButton('📋 Список заблокированных', callback_data='admin-blocked-list'),
-        InlineKeyboardButton('♻️ Сбросить ВСЕ рейтинги', callback_data='admin-reset-all')
+        InlineKeyboardButton('♻️ Сбросить рейтинги', callback_data='admin-reset-all')
     )
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='back-to-main'))
 
@@ -286,7 +286,7 @@ async def admin_block_confirm(callback: types.CallbackQuery):
     minutes = int(data_parts[2])
     user_name = KNOWN_USERS.get(user_id, f"ID {user_id}")
     
-    # Предполагаем, что блокировка в основном чате (можно настроить)
+    # Предполагаем, что блокировка в основном чате
     chat_id = callback.message.chat.id
     
     # Блокируем пользователя
@@ -300,8 +300,7 @@ async def admin_block_confirm(callback: types.CallbackQuery):
             f"✅ <b>Пользователь заблокирован!</b>\n\n"
             f"👤 <b>Имя:</b> {user_name}\n"
             f"🆔 <b>ID:</b> {user_id}\n"
-            f"⏳ <b>Длительность:</b> {minutes} минут\n\n"
-            f"Пользователь получит уведомление о блокировке.",
+            f"⏳ <b>Длительность:</b> {minutes} минут",
             reply_markup=keyboard
         )
         
@@ -314,13 +313,7 @@ async def admin_block_confirm(callback: types.CallbackQuery):
                 f"Блокировка автоматически снимется через указанное время."
             )
         except:
-            pass  # Пользователь мог заблокировать бота
-    else:
-        await callback.message.edit_text(
-            f"❌ <b>Ошибка блокировки!</b>\n\n"
-            f"Не удалось заблокировать пользователя {user_name}.",
-            reply_markup=keyboard
-        )
+            pass
     
     await callback.answer()
 
@@ -361,7 +354,7 @@ async def admin_unblock_user(callback: types.CallbackQuery):
             pass
         
         keyboard.add(InlineKeyboardButton(
-            f'✅ {user_name} ({minutes_left} мин осталось)', 
+            f'✅ {user_name} ({minutes_left} мин)', 
             callback_data=f'unblock_user-{user_id}'
         ))
     
@@ -384,7 +377,7 @@ async def admin_unblock_execute(callback: types.CallbackQuery):
     user_id = int(callback.data.split('-')[1])
     user_name = KNOWN_USERS.get(user_id, f"ID {user_id}")
     
-    # Предполагаем, что разблокировка в основном чате (можно настроить)
+    # Предполагаем, что разблокировка в основном чате
     chat_id = callback.message.chat.id
     
     # Разблокируем пользователя
@@ -397,8 +390,7 @@ async def admin_unblock_execute(callback: types.CallbackQuery):
         await callback.message.edit_text(
             f"✅ <b>Пользователь разблокирован!</b>\n\n"
             f"👤 <b>Имя:</b> {user_name}\n"
-            f"🆔 <b>ID:</b> {user_id}\n\n"
-            f"Пользователь получит уведомление о разблокировке.",
+            f"🆔 <b>ID:</b> {user_id}",
             reply_markup=keyboard
         )
         
@@ -410,13 +402,7 @@ async def admin_unblock_execute(callback: types.CallbackQuery):
                 "Администратор снял с вас блокировку. Теперь вы можете снова использовать бота."
             )
         except:
-            pass  # Пользователь мог заблокировать бота
-    else:
-        await callback.message.edit_text(
-            f"❌ <b>Ошибка разблокировки!</b>\n\n"
-            f"Не удалось разблокировать пользователя {user_name}.",
-            reply_markup=keyboard
-        )
+            pass
     
     await callback.answer()
 
