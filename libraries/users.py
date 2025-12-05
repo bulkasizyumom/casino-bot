@@ -13,7 +13,7 @@ class Users:
         self.database = database
         self.cur = self.database.db
 
-        # Создаем таблицы с новой структурой
+        # Создаем таблицы с упрощенной структурой
         self.cur.executescript('''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY,
@@ -92,7 +92,7 @@ class Users:
                 PRIMARY KEY (id, chat_id, game_type)
             );
 
-            -- НОВАЯ ТАБЛИЦА ДЛЯ БЛОКИРОВОК ПОЛЬЗОВАТЕЛЕЙ
+            -- ТАБЛИЦА ДЛЯ БЛОКИРОВОК ПОЛЬЗОВАТЕЛЕЙ (ТОЛЬКО РУЧНАЯ)
             CREATE TABLE IF NOT EXISTS user_blocks (
                 id INTEGER,
                 chat_id INTEGER,
@@ -102,26 +102,7 @@ class Users:
                 PRIMARY KEY (id, chat_id)
             );
 
-            -- НОВАЯ ТАБЛИЦА ДЛЯ ПРЕДУПРЕЖДЕНИЙ
-            CREATE TABLE IF NOT EXISTS user_warnings (
-                id INTEGER,
-                chat_id INTEGER,
-                warning_type TEXT,
-                count INTEGER DEFAULT 0,
-                last_warning TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (id, chat_id, warning_type)
-            );
-
-            -- НОВАЯ ТАБЛИЦА ДЛЯ ИСТОРИИ ДЕПОВ (ДЛЯ ОБНАРУЖЕНИЯ РАВНОМЕРНЫХ ДЕПОВ)
-            CREATE TABLE IF NOT EXISTS dice_history (
-                id INTEGER,
-                chat_id INTEGER,
-                emoji TEXT,
-                timestamp REAL,
-                PRIMARY KEY (id, chat_id, timestamp)
-            );
-
-            -- НОВАЯ ТАБЛИЦА ДЛЯ СООБЩЕНИЙ ПОМОЩИ
+            -- ТАБЛИЦА ДЛЯ СООБЩЕНИЙ ПОМОЩИ
             CREATE TABLE IF NOT EXISTS help_messages (
                 message_id INTEGER PRIMARY KEY,
                 user_id INTEGER,
@@ -156,7 +137,7 @@ class Users:
             raise UserError(e)
 
     def is_user_blocked(self, user_id: int, chat_id: int) -> bool:
-        """Проверяет, заблокирован ли пользователь в данном чате"""
+        """Проверяет, заблокирован ли пользователь в данном чате (только ручная блокировка)"""
         try:
             self.cur.execute('''
                 SELECT 1 FROM user_blocks 
@@ -168,7 +149,7 @@ class Users:
             return False
 
     def block_user(self, user_id: int, chat_id: int, reason: str, duration_minutes: int = 15):
-        """Блокирует пользователя на указанное время"""
+        """Блокирует пользователя на указанное время (только ручная блокировка админом)"""
         try:
             block_start = datetime.now()
             block_end = block_start + timedelta(minutes=duration_minutes)
@@ -190,12 +171,6 @@ class Users:
         try:
             self.cur.execute('''
                 DELETE FROM user_blocks 
-                WHERE id = ? AND chat_id = ?
-            ''', (user_id, chat_id))
-            
-            # Также сбрасываем предупреждения
-            self.cur.execute('''
-                DELETE FROM user_warnings 
                 WHERE id = ? AND chat_id = ?
             ''', (user_id, chat_id))
             
@@ -256,127 +231,6 @@ class Users:
             print(f"Error getting blocked users: {e}")
             return []
 
-    def add_warning(self, user_id: int, chat_id: int, warning_type: str):
-        """Добавляет предупреждение пользователю"""
-        try:
-            self.cur.execute('''
-                INSERT INTO user_warnings (id, chat_id, warning_type, count, last_warning)
-                VALUES (?, ?, ?, 1, datetime('now'))
-                ON CONFLICT(id, chat_id, warning_type) 
-                DO UPDATE SET 
-                    count = user_warnings.count + 1,
-                    last_warning = datetime('now')
-            ''', (user_id, chat_id, warning_type))
-            
-            self.database.conn.commit()
-            
-            # Получаем текущее количество предупреждений
-            self.cur.execute('''
-                SELECT count FROM user_warnings 
-                WHERE id = ? AND chat_id = ? AND warning_type = ?
-            ''', (user_id, chat_id, warning_type))
-            result = self.cur.fetchone()
-            
-            return result[0] if result else 1
-        except Exception as e:
-            print(f"Error adding warning: {e}")
-            return 1
-
-    def get_warnings_count(self, user_id: int, chat_id: int, warning_type: str):
-        """Получает количество предупреждений пользователя"""
-        try:
-            self.cur.execute('''
-                SELECT count FROM user_warnings 
-                WHERE id = ? AND chat_id = ? AND warning_type = ?
-            ''', (user_id, chat_id, warning_type))
-            result = self.cur.fetchone()
-            return result[0] if result else 0
-        except Exception as e:
-            print(f"Error getting warnings count: {e}")
-            return 0
-
-    def reset_warnings(self, user_id: int, chat_id: int, warning_type: str = None):
-        """Сбрасывает предупреждения пользователя"""
-        try:
-            if warning_type:
-                self.cur.execute('''
-                    DELETE FROM user_warnings 
-                    WHERE id = ? AND chat_id = ? AND warning_type = ?
-                ''', (user_id, chat_id, warning_type))
-            else:
-                self.cur.execute('''
-                    DELETE FROM user_warnings 
-                    WHERE id = ? AND chat_id = ?
-                ''', (user_id, chat_id))
-            
-            self.database.conn.commit()
-            return True
-        except Exception as e:
-            print(f"Error resetting warnings: {e}")
-            return False
-
-    def add_dice_to_history(self, user_id: int, chat_id: int, emoji: str):
-        """Добавляет деп в историю для обнаружения равномерных депов"""
-        try:
-            timestamp = time.time()
-            self.cur.execute('''
-                INSERT INTO dice_history (id, chat_id, emoji, timestamp)
-                VALUES (?, ?, ?, ?)
-            ''', (user_id, chat_id, emoji, timestamp))
-            
-            # Удаляем старые записи (старше 1 часа)
-            hour_ago = timestamp - 3600
-            self.cur.execute('''
-                DELETE FROM dice_history 
-                WHERE timestamp < ?
-            ''', (hour_ago,))
-            
-            self.database.conn.commit()
-            return True
-        except Exception as e:
-            print(f"Error adding dice to history: {e}")
-            return False
-
-    def check_uniform_deps(self, user_id: int, chat_id: int, threshold: float = 0.05):
-        """
-        Проверяет, отправляет ли пользователь депы равномерно.
-        threshold - допустимое отклонение в секундах между депами.
-        """
-        try:
-            # Получаем последние 60 депов пользователя
-            self.cur.execute('''
-                SELECT timestamp FROM dice_history 
-                WHERE id = ? AND chat_id = ? 
-                ORDER BY timestamp DESC 
-                LIMIT 60
-            ''', (user_id, chat_id))
-            
-            timestamps = [row[0] for row in self.cur.fetchall()]
-            
-            if len(timestamps) < 10:  # Нужно минимум 10 депов для анализа
-                return False
-            
-            # Вычисляем разницу между депами
-            diffs = []
-            for i in range(len(timestamps) - 1):
-                diff = abs(timestamps[i] - timestamps[i + 1])
-                diffs.append(diff)
-            
-            # Если все депы с одинаковой разницей (с учетом порога)
-            if len(diffs) > 0:
-                avg_diff = sum(diffs) / len(diffs)
-                # Проверяем, что все депы в пределах порога от среднего
-                uniform_count = sum(1 for diff in diffs if abs(diff - avg_diff) <= threshold)
-                
-                # Если 95% депов равномерны
-                if uniform_count / len(diffs) >= 0.95:
-                    return True
-            
-            return False
-        except Exception as e:
-            print(f"Error checking uniform deps: {e}")
-            return False
-
     def add_help_message(self, user_id: int, chat_id: int, message_text: str):
         """Добавляет сообщение помощи от пользователя"""
         try:
@@ -435,8 +289,6 @@ class Users:
             print(f"Error updating help message status: {e}")
             return False
 
-    # Остальные методы остаются без изменений (reset_user, reset_chat и т.д.)
-
     def reset_user(self, id: int, chat_id: int):
         try:
             self.cur.execute("BEGIN")
@@ -469,8 +321,7 @@ class Users:
             self.cur.execute("DELETE FROM daily_stats")
             self.cur.execute("DELETE FROM weekly_stats")
             self.cur.execute("DELETE FROM win_streaks")
-            self.cur.execute("DELETE FROM dice_history")
-            self.cur.execute("DELETE FROM user_warnings")
+            self.cur.execute("DELETE FROM user_blocks")  # Оставляем блокировки
             self.cur.execute("COMMIT")
             self.database.conn.commit()
             return True
