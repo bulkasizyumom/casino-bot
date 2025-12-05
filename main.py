@@ -62,58 +62,6 @@ KNOWN_USERS = {
     1995856157: "Санек"
 }
 
-# 🔥 ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ЗАБЛОКИРОВАННЫХ ПОЛЬЗОВАТЕЛЕЙ
-def get_active_blocked_users():
-    """Получает список активных блокировок"""
-    try:
-        conn = sqlite3.connect('data.db')
-        cursor = conn.cursor()
-        
-        # Получаем все записи и фильтруем их в Python
-        cursor.execute('''
-            SELECT id, chat_id, block_reason, block_start, block_end 
-            FROM user_blocks
-        ''')
-        
-        results = []
-        now = datetime.now()
-        
-        for row in cursor.fetchall():
-            user_id = row[0]
-            chat_id = row[1]
-            reason = row[2]
-            block_start = row[3]
-            block_end = row[4]
-            
-            # Парсим даты
-            try:
-                if isinstance(block_end, str):
-                    end_time = datetime.strptime(block_end, '%Y-%m-%d %H:%M:%S')
-                else:
-                    continue
-                
-                # Проверяем, не истекла ли блокировка
-                if end_time > now:
-                    remaining = end_time - now
-                    minutes_left = max(0, int(remaining.total_seconds() / 60))
-                    
-                    results.append({
-                        'user_id': user_id,
-                        'chat_id': chat_id,
-                        'reason': reason,
-                        'start': block_start,
-                        'end': block_end,
-                        'minutes_left': minutes_left
-                    })
-            except:
-                continue
-        
-        conn.close()
-        return results
-    except Exception as e:
-        print(f"Error getting blocked users: {e}")
-        return []
-
 # 🔥 НОВЫЙ МИДЛВАРЬ ДЛЯ РУЧНОЙ БЛОКИРОВКИ ПОЛЬЗОВАТЕЛЕЙ
 class BlockedUsersMiddleware(BaseMiddleware):
     async def on_pre_process_message(self, message: types.Message, data: dict):
@@ -378,7 +326,7 @@ async def admin_unblock_user(callback: types.CallbackQuery):
         return
     
     # Получаем список заблокированных пользователей
-    blocked_users = get_active_blocked_users()
+    blocked_users = USERS.get_all_blocked_users()
     
     if not blocked_users:
         keyboard = InlineKeyboardMarkup()
@@ -396,7 +344,15 @@ async def admin_unblock_user(callback: types.CallbackQuery):
     for user in blocked_users:
         user_id = user['user_id']
         user_name = KNOWN_USERS.get(user_id, f"ID {user_id}")
-        minutes_left = user.get('minutes_left', 0)
+        minutes_left = 0
+        
+        # Вычисляем оставшееся время
+        try:
+            end_time = datetime.strptime(user['end'], '%Y-%m-%d %H:%M:%S')
+            remaining = end_time - datetime.now()
+            minutes_left = max(0, int(remaining.total_seconds() / 60))
+        except:
+            pass
         
         keyboard.add(InlineKeyboardButton(
             f'✅ {user_name} ({minutes_left} мин)', 
@@ -458,7 +414,7 @@ async def admin_blocked_list(callback: types.CallbackQuery):
         await callback.answer("❌ У вас нет прав администратора", show_alert=True)
         return
     
-    blocked_users = get_active_blocked_users()
+    blocked_users = USERS.get_all_blocked_users()
     
     if not blocked_users:
         text = "📭 <b>Нет заблокированных пользователей</b>"
@@ -467,7 +423,10 @@ async def admin_blocked_list(callback: types.CallbackQuery):
         for i, user in enumerate(blocked_users, 1):
             user_id = user['user_id']
             user_name = KNOWN_USERS.get(user_id, f"ID {user_id}")
-            minutes_left = user.get('minutes_left', 0)
+            
+            end_time = datetime.strptime(user['end'], '%Y-%m-%d %H:%M:%S')
+            remaining = end_time - datetime.now()
+            minutes_left = max(0, int(remaining.total_seconds() / 60))
             
             text += f"{i}. <b>{user_name}</b>\n"
             text += f"   ⏳ <b>Осталось:</b> {minutes_left} минут\n"
@@ -564,7 +523,6 @@ async def my_streak(message: types.Message):
     )
 
 if __name__ == '__main__':
-    import sqlite3  # 🔥 ДОБАВЛЕНО ИМПОРТ
     MessagesHandler(DP, BOT, GAMES, USERS)
     RatingHandler(DP, BOT, USERS)
 
@@ -572,4 +530,5 @@ if __name__ == '__main__':
     print("Для остановки нажми Ctrl+C")
     
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
+
 
