@@ -1,5 +1,6 @@
 import json, os, time, logging
 from datetime import datetime, timedelta
+import asyncio
 
 # Настраиваем логирование
 logging.basicConfig(
@@ -72,10 +73,10 @@ class BlockedUsersMiddleware(BaseMiddleware):
                     remaining = end_time - datetime.now()
                     minutes_left = int(remaining.total_seconds() / 60)
                     
+                    # 🔥 УПРОЩЕННОЕ СООБЩЕНИЕ О БЛОКИРОВКЕ (без причины)
                     warning_msg = await BOT.send_message(
                         chat_id,
                         f'🚫 Пользователь @{message.from_user.username if message.from_user.username else message.from_user.full_name} заблокирован!\n'
-                        f'⏰ <b>Причина:</b> {block_info["reason"]}\n'
                         f'⏳ <b>Разблокировка через:</b> {minutes_left} минут',
                         message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
                     )
@@ -257,8 +258,8 @@ async def process_help_message(message: types.Message, state: FSMContext):
                     f"📝 <b>Текст:</b>\n{message.text}\n\n"
                     f"📌 <b>Действия:</b>\n"
                     f"/unblock_{user_id}_{chat_id} - разблокировать\n"
-                    f"/viewhelp_{message_id} - просмотреть детали\n"
-                    f"/block_{user_id}_{chat_id} - заблокировать"
+                    f"/block_{user_id}_{chat_id}_причина - заблокировать (на 15 мин)\n"
+                    f"/viewhelp_{message_id} - просмотреть детали"
                 )
             except Exception as e:
                 logger.error(f"Не удалось отправить уведомление админу {admin_id}: {e}")
@@ -405,12 +406,11 @@ async def block_user_command(message: types.Message):
             if success:
                 await message.reply(f"✅ Пользователь {user_id} заблокирован в чате {chat_id} на 15 минут!\n<b>Причина:</b> {reason}")
                 
-                # Уведомляем пользователя
+                # 🔥 УПРОЩЕННОЕ УВЕДОМЛЕНИЕ ПОЛЬЗОВАТЕЛЮ (без причины)
                 try:
                     await BOT.send_message(
                         user_id,
                         f"🚫 <b>Вы были заблокированы!</b>\n\n"
-                        f"⏰ <b>Причина:</b> {reason}\n"
                         f"⏳ <b>Длительность:</b> 15 минут\n\n"
                         f"Если это ошибка, используйте команду /help"
                     )
@@ -482,7 +482,7 @@ async def view_help_message_command(message: types.Message):
             text += f"🕒 <b>Время:</b> {target_msg['timestamp']}\n\n"
             text += f"📝 <b>Текст сообщения:</b>\n{target_msg['message_text']}\n\n"
             text += f"📌 <b>Действия:</b>\n"
-            text += f"/block_{target_msg['user_id']}_{target_msg['chat_id']}_нарушение - заблокировать\n"
+            text += f"/block_{target_msg['user_id']}_{target_msg['chat_id']}_нарушение - заблокировать (15 мин)\n"
             text += f"/unblock_{target_msg['user_id']}_{target_msg['chat_id']} - разблокировать\n"
             text += f"/closehelp_{message_id} - закрыть обращение"
             
@@ -587,4 +587,62 @@ async def my_streak(message: types.Message):
     has_streaks = False
     
     for game in games_list:
-        streaks_data = USERS.get_win_streaks(chat_id, game
+        streaks_data = USERS.get_win_streaks(chat_id, game)
+        for streak in streaks_data:
+            if streak['id'] == user_id and streak['max_streak'] > 0:
+                game_names = {
+                    'slots': '🎰 Слоты',
+                    'dice': '🎲 Кубик',
+                    'foot': '⚽️ Футбол',
+                    'bowl': '🎳 Боулинг',
+                    'bask': '🏀 Баскетбол',
+                    'dart': '🎯 Дартс'
+                }
+                text_lines.append(f"{game_names.get(game, game)}: <b>{streak['max_streak']}</b>")
+                has_streaks = True
+    
+    if not has_streaks:
+        text_lines.append("\n📊 <i>У вас пока нет серий побед</i>")
+    
+    await BOT.send_message(
+        message.chat.id,
+        '\n'.join(text_lines),
+        message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
+    )
+
+# Команда для проверки статуса блокировки
+@DP.message_handler(commands=['mystatus'])
+async def my_status(message: types.Message):
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    
+    if USERS.is_user_blocked(user_id, chat_id):
+        block_info = USERS.get_block_info(user_id, chat_id)
+        if block_info:
+            from datetime import datetime
+            end_time = datetime.strptime(block_info['end'], '%Y-%m-%d %H:%M:%S')
+            remaining = end_time - datetime.now()
+            minutes_left = max(0, int(remaining.total_seconds() / 60))
+            
+            # 🔥 УПРОЩЕННОЕ СООБЩЕНИЕ ДЛЯ ПОЛЬЗОВАТЕЛЯ
+            text = f"🚫 <b>Вы заблокированы!</b>\n\n"
+            text += f"⏳ <b>Разблокировка через:</b> {minutes_left} минут\n\n"
+            text += f"Если это ошибка, используйте команду /help"
+    else:
+        text = f"✅ <b>Статус: Активен</b>\n\n"
+        text += f"Теперь вы можете использовать все команды бота."
+    
+    await BOT.send_message(
+        message.chat.id,
+        text,
+        message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
+    )
+
+if __name__ == '__main__':
+    MessagesHandler(DP, BOT, GAMES, USERS)
+    RatingHandler(DP, BOT, USERS)
+
+    print("🤖 Бот запущен и работает...")
+    print("Для остановки нажми Ctrl+C")
+    
+    executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
