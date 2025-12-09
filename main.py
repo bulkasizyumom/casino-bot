@@ -63,10 +63,6 @@ KNOWN_USERS = {
     5928889926: "Катя"  # Добавили Катю
 }
 
-# Состояния для FSM
-class HelpState(StatesGroup):
-    waiting_for_help_message = State()
-
 # 🔥 НОВЫЙ МИДЛВАРЬ ДЛЯ РУЧНОЙ БЛОКИРОВКИ ПОЛЬЗОВАТЕЛЕЙ
 class BlockedUsersMiddleware(BaseMiddleware):
     async def on_pre_process_message(self, message: types.Message, data: dict):
@@ -85,7 +81,10 @@ class BlockedUsersMiddleware(BaseMiddleware):
             if message.text and message.text.lower() in ['/start', '/casino']:
                 block_info = USERS.get_block_info(user_id, chat_id)
                 if block_info:
-                    minutes_left = block_info.get('minutes_left', 0)
+                    from datetime import datetime
+                    end_time = datetime.strptime(block_info['end'], '%Y-%m-%d %H:%M:%S')
+                    remaining = end_time - datetime.now()
+                    minutes_left = int(remaining.total_seconds() / 60)
                     
                     # 🔥 УПРОЩЕННОЕ СООБЩЕНИЕ О БЛОКИРОВКЕ
                     warning_msg = await BOT.send_message(
@@ -115,7 +114,7 @@ class BlockedUsersMiddleware(BaseMiddleware):
         chat_id = callback_query.message.chat.id
         
         # Исключаем кнопку помощи из блокировки
-        if callback_query.data == 'help_send_message':
+        if callback_query.data == 'help_send_request':
             return
             
         if USERS.is_user_blocked(user_id, chat_id):
@@ -220,15 +219,16 @@ async def help_command(message: types.Message):
         # Создаем клавиатуру для заблокированного пользователя
         keyboard = InlineKeyboardMarkup(row_width=1)
         keyboard.add(
-            InlineKeyboardButton('📨 Написать сообщение помощи', callback_data='help_send_message')
+            InlineKeyboardButton('🚫 Я не согласен с блокировкой, рассмотрите эту заявку', 
+                               callback_data='help_send_request')
         )
         
         await BOT.send_message(
             chat_id,
             "🚫 <b>Вы заблокированы!</b>\n\n"
             "Если вы считаете, что блокировка была несправедливой, "
-            "вы можете отправить сообщение администратору с объяснением ситуации.\n\n"
-            "Ваше сообщение будет рассмотрено в кратчайшие сроки.",
+            "вы можете отправить заявку на рассмотрение администратору.\n\n"
+            "Ваша заявка будет рассмотрена в кратчайшие сроки.",
             reply_markup=keyboard,
             message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
         )
@@ -245,9 +245,9 @@ async def help_command(message: types.Message):
             message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
         )
 
-# Обработчик кнопки помощи
-@DP.callback_query_handler(lambda c: c.data == 'help_send_message')
-async def help_send_message_callback(callback: types.CallbackQuery):
+# Обработчик кнопки помощи (заявка на рассмотрение)
+@DP.callback_query_handler(lambda c: c.data == 'help_send_request')
+async def help_send_request_callback(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
     
@@ -256,68 +256,39 @@ async def help_send_message_callback(callback: types.CallbackQuery):
         await callback.answer("Вы не заблокированы", show_alert=True)
         return
     
-    await callback.message.edit_text(
-        "📝 <b>Напишите ваше сообщение помощи:</b>\n\n"
-        "Опишите, почему вы считаете блокировку несправедливой.\n"
-        "Максимум 500 символов.\n\n"
-        "❌ <i>Отмена: /cancel</i>"
-    )
+    user_name = callback.from_user.full_name
+    username = f"@{callback.from_user.username}" if callback.from_user.username else "нет username"
     
-    await HelpState.waiting_for_help_message.set()
-    await callback.answer()
-
-# Обработчик сообщения помощи
-@DP.message_handler(state=HelpState.waiting_for_help_message, content_types=ContentType.TEXT)
-async def process_help_message(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
+    # Получаем информацию о блокировке
+    block_info = USERS.get_block_info(user_id, chat_id)
+    block_reason = block_info['reason'] if block_info else "Нарушение правил"
     
-    # Проверяем, заблокирован ли пользователь
-    if not USERS.is_user_blocked(user_id, chat_id):
-        await state.finish()
-        await message.answer("❌ Вы не заблокированы")
-        return
-    
-    if message.text == '/cancel':
-        await state.finish()
-        await message.answer("❌ Отправка сообщения отменена.")
-        return
-    
-    # Проверяем длину сообщения
-    if len(message.text) > 500:
-        await message.answer("❌ Сообщение слишком длинное! Максимум 500 символов.")
-        return
-    
-    # Сохраняем сообщение помощи
-    message_id = USERS.add_help_message(user_id, chat_id, message.text)
+    # Сохраняем заявку в базу данных
+    message_text = f"🚫 Заявка на рассмотрение блокировки\nПользователь: {user_name}\nUsername: {username}\nПричина блокировки: {block_reason}\n\nПользователь не согласен с блокировкой и просит рассмотреть заявку."
+    message_id = USERS.add_help_message(user_id, chat_id, message_text)
     
     if message_id:
-        # Уведомляем пользователя
-        await message.answer(
-            "✅ <b>Сообщение отправлено!</b>\n\n"
-            "Администратор получил ваше сообщение. "
-            "Ожидайте ответа в ближайшее время."
-        )
+        await callback.answer("✅ Ваша заявка отправлена администратору!", show_alert=True)
         
         # Уведомляем всех админов
         for admin_id in ADMIN_IDS:
             try:
                 await BOT.send_message(
                     admin_id,
-                    f"🆘 <b>Новое сообщение помощи от заблокированного пользователя!</b>\n\n"
-                    f"👤 <b>Пользователь:</b> {message.from_user.full_name}\n"
+                    f"🚨 <b>НОВАЯ ЗАЯВКА НА РАССМОТРЕНИЕ БЛОКИРОВКИ!</b>\n\n"
+                    f"👤 <b>Пользователь:</b> {user_name}\n"
+                    f"📱 <b>Username:</b> {username}\n"
                     f"🆔 <b>ID:</b> {user_id}\n"
-                    f"💬 <b>Сообщение:</b>\n{message.text}\n\n"
-                    f"🕒 <b>Время:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    f"💬 <b>Причина блокировки:</b> {block_reason}\n\n"
+                    f"⏰ <b>Время:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                    f"<i>Пользователь не согласен с блокировкой и просит рассмотреть заявку.</i>"
                 )
-            except:
-                pass
+            except Exception as e:
+                print(f"Ошибка при отправке уведомления админу {admin_id}: {e}")
     else:
-        await message.answer("❌ Ошибка при отправке сообщения. Попробуйте позже.")
-    
-    await state.finish()
+        await callback.answer("❌ Ошибка при отправке заявки", show_alert=True)
 
-# 🔥 ПРОСТАЯ АДМИН ПАНЕЛЬ
+# 🔥 ПРОСТАЯ АДМИН ПАНЕЛЬ (упрощенная)
 @DP.callback_query_handler(lambda c: c.data == 'admin')
 async def admin_panel(callback: types.CallbackQuery):
     if not USERS.is_admin(callback.from_user.id):
@@ -330,10 +301,9 @@ async def admin_panel(callback: types.CallbackQuery):
         InlineKeyboardButton('✅ Разблокировать', callback_data='admin-unblock-user')
     )
     keyboard.add(
-        InlineKeyboardButton('📋 Список заблокированных', callback_data='admin-blocked-list'),
-        InlineKeyboardButton('♻️ Сбросить рейтинги', callback_data='admin-reset-all')
+        InlineKeyboardButton('♻️ Сбросить рейтинги', callback_data='admin-reset-all'),
+        InlineKeyboardButton('🔙 Назад', callback_data='back-to-main')
     )
-    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='back-to-main'))
 
     await callback.message.edit_text(
         "⚙️ <b>Панель администратора</b>\n\n"
@@ -445,7 +415,7 @@ async def admin_unblock_user(callback: types.CallbackQuery):
         await callback.answer("❌ У вас нет прав администратора", show_alert=True)
         return
     
-    # Получаем список заблокированных пользователей
+    # Получаем список заблокированных пользователей в текущем чате
     chat_id = callback.message.chat.id
     blocked_users = USERS.get_all_blocked_users(chat_id)
     
@@ -454,7 +424,7 @@ async def admin_unblock_user(callback: types.CallbackQuery):
         keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
         
         await callback.message.edit_text(
-            "📭 <b>Нет заблокированных пользователей</b>",
+            "📭 <b>В этом чате нет заблокированных пользователей</b>",
             reply_markup=keyboard
         )
         await callback.answer()
@@ -464,19 +434,17 @@ async def admin_unblock_user(callback: types.CallbackQuery):
     
     for user in blocked_users:
         user_id = user['user_id']
-        user_name = KNOWN_USERS.get(user_id, f"Пользователь")
-        minutes_left = user.get('minutes_left', 0)
+        user_name = KNOWN_USERS.get(user_id, "Пользователь")
         
         keyboard.add(InlineKeyboardButton(
-            f'✅ {user_name} ({minutes_left} мин)', 
+            f'✅ {user_name}', 
             callback_data=f'unblock_user-{user_id}'
         ))
     
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
     
     await callback.message.edit_text(
-        "✅ <b>Выберите пользователя для разблокировки:</b>\n\n"
-        "<i>В скобках указано оставшееся время блокировки</i>",
+        "✅ <b>Выберите пользователя для разблокировки:</b>",
         reply_markup=keyboard
     )
     await callback.answer()
@@ -491,8 +459,16 @@ async def admin_unblock_execute(callback: types.CallbackQuery):
     user_id = int(callback.data.split('-')[1])
     user_name = KNOWN_USERS.get(user_id, "Пользователь")
     
-    # Предполагаем, что разблокировка в основном чате
+    # Разблокируем пользователя во всех чатах (или в текущем)
     chat_id = callback.message.chat.id
+    
+    # Получаем все блокировки этого пользователя в текущем чате
+    blocked_users = USERS.get_all_blocked_users(chat_id)
+    user_blocked = any(user['user_id'] == user_id for user in blocked_users)
+    
+    if not user_blocked:
+        await callback.answer("❌ Этот пользователь не заблокирован в этом чате", show_alert=True)
+        return
     
     # Разблокируем пользователя
     success = USERS.unblock_user(user_id, chat_id)
@@ -517,36 +493,6 @@ async def admin_unblock_execute(callback: types.CallbackQuery):
         except:
             pass
     
-    await callback.answer()
-
-# Список заблокированных пользователей
-@DP.callback_query_handler(lambda c: c.data == 'admin-blocked-list')
-async def admin_blocked_list(callback: types.CallbackQuery):
-    if not USERS.is_admin(callback.from_user.id):
-        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-        return
-    
-    chat_id = callback.message.chat.id
-    blocked_users = USERS.get_all_blocked_users(chat_id)
-    
-    if not blocked_users:
-        text = "📭 <b>Нет заблокированных пользователей</b>"
-    else:
-        text = "🚫 <b>Заблокированные пользователи:</b>\n\n"
-        for i, user in enumerate(blocked_users, 1):
-            user_id = user['user_id']
-            user_name = KNOWN_USERS.get(user_id, "Пользователь")
-            
-            minutes_left = user.get('minutes_left', 0)
-            
-            text += f"{i}. <b>{user_name}</b>\n"
-            text += f"   ⏳ <b>Осталось:</b> {minutes_left} минут\n"
-            text += f"   🕒 <b>Причина:</b> {user['reason']}\n\n"
-    
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
-    
-    await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
 @DP.callback_query_handler(lambda c: c.data == 'admin-reset-all')
