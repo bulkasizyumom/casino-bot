@@ -191,10 +191,17 @@ class Users:
             result = self.cur.fetchone()
             
             if result:
+                # Вычисляем оставшееся время
+                end_time = datetime.strptime(result[2], '%Y-%m-%d %H:%M:%S')
+                current_time = datetime.now()
+                remaining_seconds = max(0, (end_time - current_time).total_seconds())
+                minutes_left = int(remaining_seconds // 60)
+                
                 return {
                     'reason': result[0],
                     'start': result[1],
-                    'end': result[2]
+                    'end': result[2],
+                    'minutes_left': minutes_left
                 }
             return None
         except Exception as e:
@@ -202,29 +209,40 @@ class Users:
             return None
 
     def get_all_blocked_users(self, chat_id: int = None):
-        """Получает список всех заблокированных пользователей"""
+        """Получает список всех заблокированных пользователей с расчетом оставшегося времени"""
         try:
             if chat_id:
                 self.cur.execute('''
                     SELECT id, chat_id, block_reason, block_start, block_end 
                     FROM user_blocks 
                     WHERE chat_id = ? AND block_end > datetime('now')
+                    ORDER BY block_end ASC
                 ''', (chat_id,))
             else:
                 self.cur.execute('''
                     SELECT id, chat_id, block_reason, block_start, block_end 
                     FROM user_blocks 
                     WHERE block_end > datetime('now')
+                    ORDER BY block_end ASC
                 ''')
             
             results = []
             for row in self.cur.fetchall():
+                # Парсим время блокировки
+                end_time = datetime.strptime(row[4], '%Y-%m-%d %H:%M:%S')
+                current_time = datetime.now()
+                
+                # Вычисляем оставшееся время
+                remaining_seconds = max(0, (end_time - current_time).total_seconds())
+                minutes_left = int(remaining_seconds // 60)
+                
                 results.append({
                     'user_id': row[0],
                     'chat_id': row[1],
                     'reason': row[2],
                     'start': row[3],
-                    'end': row[4]
+                    'end': row[4],
+                    'minutes_left': minutes_left
                 })
             return results
         except Exception as e:
