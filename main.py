@@ -206,44 +206,28 @@ async def info_command(message: types.Message):
         reply_markup=keyboard
     )
 
-# Команда помощи для заблокированных пользователей
+# Команда помощи для заблокированных пользователей (УПРОЩЕННАЯ)
 @DP.message_handler(commands=['help'])
 async def help_command(message: types.Message):
     user_id = message.from_user.id
     chat_id = message.chat.id
     
-    # Проверяем, заблокирован ли пользователь
-    is_blocked = USERS.is_user_blocked(user_id, chat_id)
+    # Всегда показываем одно и то же сообщение с кнопкой
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        InlineKeyboardButton('🚫 Я не согласен с блокировкой, рассмотрите эту заявку', 
+                           callback_data='help_send_request')
+    )
     
-    if is_blocked:
-        # Создаем клавиатуру для заблокированного пользователя
-        keyboard = InlineKeyboardMarkup(row_width=1)
-        keyboard.add(
-            InlineKeyboardButton('🚫 Я не согласен с блокировкой, рассмотрите эту заявку', 
-                               callback_data='help_send_request')
-        )
-        
-        await BOT.send_message(
-            chat_id,
-            "🚫 <b>Вы заблокированы!</b>\n\n"
-            "Если вы считаете, что блокировка была несправедливой, "
-            "вы можете отправить заявку на рассмотрение администратору.\n\n"
-            "Ваша заявка будет рассмотрена в кратчайшие сроки.",
-            reply_markup=keyboard,
-            message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
-        )
-    else:
-        await BOT.send_message(
-            chat_id,
-            "ℹ️ <b>Команды бота:</b>\n\n"
-            "/casino или /start - Главное меню\n"
-            "/games - Список игр\n"
-            "/info - Информация о боте\n"
-            "/help - Помощь\n"
-            "/mystreak - Ваши серии побед\n"
-            "/congratulate - Включить/выключить поздравления",
-            message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
-        )
+    await BOT.send_message(
+        chat_id,
+        "🚫 <b>Если вас заблокировали и вы не согласны с этим</b>\n\n"
+        "Нажмите на кнопку ниже, чтобы отправить заявку администратору.\n"
+        "Ваша заявка будет рассмотрена в кратчайшие сроки.\n\n"
+        "<i>Эта кнопка доступна только заблокированным пользователям.</i>",
+        reply_markup=keyboard,
+        message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
+    )
 
 # Обработчик кнопки помощи (заявка на рассмотрение)
 @DP.callback_query_handler(lambda c: c.data == 'help_send_request')
@@ -253,7 +237,7 @@ async def help_send_request_callback(callback: types.CallbackQuery):
     
     # Проверяем, заблокирован ли пользователь
     if not USERS.is_user_blocked(user_id, chat_id):
-        await callback.answer("Вы не заблокированы", show_alert=True)
+        await callback.answer("❌ Эта кнопка доступна только заблокированным пользователям", show_alert=True)
         return
     
     user_name = callback.from_user.full_name
