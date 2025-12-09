@@ -244,7 +244,7 @@ class MessagesHandler:
                     try:
                         await warning_msg.delete()
                     except:
-                        pass
+                    pass
                 return
 
             # Убрали проверку анти-спам защиты для команд
