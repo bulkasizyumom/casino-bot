@@ -58,27 +58,7 @@ class MessagesHandler:
                         pass
                 return  # Полностью прекращаем обработку
             
-            # Проверяем быстрые депы (только игнорирование, без блокировки)
-            current_time = time.time()
-            user_key = f"{user_id}_{chat_id}"
-            
-            # Проверяем быстрые депы (быстрее 0.3 секунды)
-            if user_key in self.last_dice_time:
-                time_diff = current_time - self.last_dice_time[user_key]
-                
-                if time_diff < 0.3:  # Слишком быстро
-                    logger.warning(
-                        f"⏰ СЛИШКОМ БЫСТРО: UserID={user_id}, "
-                        f"Name={message.from_user.full_name}, "
-                        f"TimeDiff={time_diff:.3f}s"
-                    )
-                    
-                    # Просто игнорируем этот деп (не засчитываем в статистике)
-                    await asyncio.sleep(0.5)
-                    return  # Игнорируем этот деп
-            
-            # Обновляем время последнего депа
-            self.last_dice_time[user_key] = current_time
+            # Убрали проверку на быстрые депы
             
             # Проверяем обычные условия
             if message.forward_date:
@@ -94,6 +74,10 @@ class MessagesHandler:
         async def handle_all_messages_with_block(message: types.Message):
             user_id = message.from_user.id
             chat_id = message.chat.id
+            
+            # Исключаем команду /help из блокировки
+            if message.text and message.text.lower() == '/help':
+                return
             
             # Проверяем ручную блокировку
             if database.is_user_blocked(user_id, chat_id):
@@ -263,24 +247,8 @@ class MessagesHandler:
                         pass
                 return
 
-            # Проверяем анти-спам защиту для команд (только игнорирование)
-            current_time = time.time()
-            user_key = f"{user_id}_{chat_id}"
+            # Убрали проверку анти-спам защиты для команд
             
-            if user_key in self.last_dice_time:
-                time_diff = current_time - self.last_dice_time[user_key]
-                
-                if time_diff < 0.3:
-                    await message.reply(
-                        "⏳ <b>Слишком быстро!</b> Подождите немного перед следующим броском.\n"
-                        "<i>Этот бросок не будет засчитан в рейтингах.</i>",
-                        disable_notification=True
-                    )
-                    return  # Игнорируем этот деп
-            
-            # Обновляем время последнего депа
-            self.last_dice_time[user_key] = current_time
-
             command = message.text.lstrip('/')
             emoji = next((k for k, v in games.items() if v['name'] == command), None)
 
