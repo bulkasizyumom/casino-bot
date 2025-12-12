@@ -17,7 +17,7 @@ class RatingHandler:
                 InlineKeyboardButton('🎲 Кубик', callback_data='rating_game-dice')
             )
             keyboard.add(
-                InlineKeyboardButton('⚽️ Футбол', callback_data='rating_game-foot'),
+                InlineKeyboardButton('🏈 Футбол', callback_data='rating_game-foot'),  # 🔥 ИСПРАВЛЕНО: ⚽️ → 🏈
                 InlineKeyboardButton('🎳 Боулинг', callback_data='rating_game-bowl')
             )
             keyboard.add(
@@ -40,7 +40,7 @@ class RatingHandler:
             game_emojis = {
                 'slots': '🎰',
                 'dice': '🎲', 
-                'foot': '⚽️',
+                'foot': '🏈',  # 🔥 ИСПРАВЛЕНО: ⚽️ → 🏈
                 'bowl': '🎳',
                 'bask': '🏀',
                 'dart': '🎯'
@@ -81,7 +81,7 @@ class RatingHandler:
             game_emojis = {
                 'slots': '🎰',
                 'dice': '🎲',
-                'foot': '⚽️',
+                'foot': '🏈',  # 🔥 ИСПРАВЛЕНО: ⚽️ → 🏈
                 'bowl': '🎳', 
                 'bask': '🏀',
                 'dart': '🎯'
@@ -140,7 +140,7 @@ class RatingHandler:
             game_emojis = {
                 'slots': '🎰',
                 'dice': '🎲',
-                'foot': '⚽️',
+                'foot': '🏈',  # 🔥 ИСПРАВЛЕНО: ⚽️ → 🏈
                 'bowl': '🎳',
                 'bask': '🏀',
                 'dart': '🎯'
