@@ -69,7 +69,7 @@ class MessagesHandler:
             else:
                 # 🔥 ИСПРАВЛЕНИЕ: Добавляем логирование для отладки
                 emoji = message.dice.emoji if message.dice else "Нет эмодзи"
-                logger.warning(f"Неизвестный эмодзи: '{emoji}'")
+                logger.warning(f"Неизвестный эмодзи: '{emoji}' (код: {ord(emoji[0]) if emoji else 'нет'})")
                 await message.reply(f'Неизвестный тип эмодзи: {emoji}')
 
         # 🔥 ХЕНДЛЕР ДЛЯ ВСЕХ СООБЩЕНИЙ С ПРОВЕРКОЙ БЛОКИРОВКИ
@@ -115,7 +115,7 @@ class MessagesHandler:
                 return
 
         async def process_dice(message: types.Message, emoji: str, value: int, user: int):
-            # 🔥 РЕГИСТРИРУЕМ ПОЛЬЗОВАТЕЛЯ ЕСЛИ ЕГО НЕТ
+            # 🔥 РЕГИСТРИРУЕМ ПОЛЬЗОВАТЕЛЬ ЕСЛИ ЕГО НЕТ
             if not database.get('users', user):
                 database.add(user, message.from_user.full_name)
 
@@ -202,7 +202,7 @@ class MessagesHandler:
                         await asyncio.sleep(1)
                         special_message = await bot.send_message(
                             message.chat.id,
-                            "Не грусти, пупсик, в следующий раз получится💋",
+                            "💋 Не грусти, пупсик, в следующий раз получится",
                             message_thread_id=message.message_thread_id
                         )
                         
