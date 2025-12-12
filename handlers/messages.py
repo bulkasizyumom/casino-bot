@@ -67,7 +67,10 @@ class MessagesHandler:
             if message.dice and message.dice.emoji in games:
                 await process_dice(message, message.dice.emoji, message.dice.value, message.from_user.id)
             else:
-                await message.reply(f'Неизвестный тип эмодзи: {message.dice.emoji if message.dice else "Нет эмодзи"}')
+                # 🔥 ИСПРАВЛЕНИЕ: Добавляем логирование для отладки
+                emoji = message.dice.emoji if message.dice else "Нет эмодзи"
+                logger.warning(f"Неизвестный эмодзи: '{emoji}'")
+                await message.reply(f'Неизвестный тип эмодзи: {emoji}')
 
         # 🔥 ХЕНДЛЕР ДЛЯ ВСЕХ СООБЩЕНИЙ С ПРОВЕРКОЙ БЛОКИРОВКИ
         @dp.message_handler(content_types=[ContentType.TEXT, ContentType.STICKER, ContentType.ANIMATION])
@@ -199,7 +202,7 @@ class MessagesHandler:
                         await asyncio.sleep(1)
                         special_message = await bot.send_message(
                             message.chat.id,
-                            "💋 Не грусти, пупсик, в следующий раз получится",
+                            "Не грусти, пупсик, в следующий раз получится💋",
                             message_thread_id=message.message_thread_id
                         )
                         
