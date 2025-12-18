@@ -45,8 +45,8 @@ GAMES = {
     '🎰': {'name': 'slots', 'win': [1, 22, 43], 'jackpot': 64},
     '🏀': {'name': 'bask',  'win': [4, 5]},
     '🎯': {'name': 'dart',  'win': [6]},
-    '⚽️': {'name': 'foot',  'win': [3, 5]},  # С вариационным селектором
-    '⚽': {'name': 'foot',  'win': [3, 5]},   # 🔥 ИСПРАВЛЕНИЕ: без вариационного селектора
+    '⚽️': {'name': 'foot',  'win': [3, 5]},  
+    '⚽': {'name': 'foot',  'win': [3, 5]},  
     '🎳': {'name': 'bowl',  'win': [6]},
     '🎲': {'name': 'dice',  'win': [1]},
 }
@@ -87,7 +87,7 @@ scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
 scheduler_thread.start()
 
 # 🔥 ИСПРАВЛЕНИЕ: Добавляем Саню в админы
-ADMIN_IDS = [1773287874, 1995856157]  # 🔥 ДОБАВИЛИ САНЮ (1995856157)
+ADMIN_IDS = [1773287874, 1995856157]  
 for admin_id in ADMIN_IDS:
     USERS.add_admin(admin_id)
 
@@ -610,3 +610,4 @@ if __name__ == '__main__':
     print("Для остановки нажми Ctrl+C")
     
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
+
