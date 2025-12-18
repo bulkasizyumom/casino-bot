@@ -180,41 +180,7 @@ class MessagesHandler:
                         message_thread_id=message.message_thread_id
                     )
 
-            # 🔥 СПЕЦИАЛЬНОЕ СООБЩЕНИЕ ДЛЯ ПОЛЬЗОВАТЕЛЯ 751379478
-            SPECIAL_USER_ID = 751379478
-            if user == SPECIAL_USER_ID:
-                # Инициализируем или обновляем счетчик проигрышных депов
-                user_key = f"{user}_{chat_id}"
-                
-                if is_win:
-                    # При выигрыше сбрасываем счетчик
-                    if user_key in self.special_user_losing_streaks:
-                        self.special_user_losing_streaks[user_key] = 0
-                else:
-                    # При проигрыше увеличиваем счетчик
-                    if user_key not in self.special_user_losing_streaks:
-                        self.special_user_losing_streaks[user_key] = 1
-                    else:
-                        self.special_user_losing_streaks[user_key] += 1
-                    
-                    # Если 15 проигрышных депов подряд
-                    if self.special_user_losing_streaks[user_key] == 15:
-                        await asyncio.sleep(1)
-                        special_message = await bot.send_message(
-                            message.chat.id,
-                            "💋 Не грусти, пупсик, в следующий раз получится",
-                            message_thread_id=message.message_thread_id
-                        )
-                        
-                        # После отправки сообщения сбрасываем счетчик
-                        self.special_user_losing_streaks[user_key] = 0
-                        
-                        # Удаляем сообщение через 10 секунд
-                        await asyncio.sleep(10)
-                        try:
-                            await special_message.delete()
-                        except:
-                            pass
+       
 
             # Обновляем периодическую статистику
             database.increment_period_stats(user, chat_id, game_name, tries, wins, jackpots)
@@ -261,3 +227,4 @@ class MessagesHandler:
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
             await process_dice(dice_message, emoji, dice_message.dice.value, user_id)
+
