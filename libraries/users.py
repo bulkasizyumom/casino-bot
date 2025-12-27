@@ -170,59 +170,6 @@ class Users:
             logger.error(f"Error blocking user: {e}")
             return False
 
-    def get_competition_points(self, user_id: int, chat_id: int):
-    """Рассчитывает очки пользователя по формуле из Excel"""
-    try:
-        # Получаем общую статистику
-        tries_data = self.get('tries', user_id, chat_id)
-        wins_data = self.get('wins', user_id, chat_id)
-        jackpots_data = self.get('jackpots', user_id, chat_id)
-        
-        if not tries_data or not wins_data:
-            return 0
-        
-        # Для всех игр считаем отдельно
-        total_points = 0
-        
-        # Для каждой игры используем формулу: 100*(выигрыши) - (попытки - выигрыши)*5 + 10000*винрейт
-        games = ['slots', 'dice', 'dart', 'bowl', 'foot', 'bask']
-        
-        for game in games:
-            tries = tries_data.get(game, 0)
-            wins = wins_data.get(game, 0)
-            
-            if tries > 0:
-                winrate = wins / tries
-                
-                # Для слотов учитываем джекпоты
-                if game == 'slots':
-                    jackpots = jackpots_data.get('slots', 0) if jackpots_data else 0
-                    # Формула: 100*(выигрыши - джекпоты) - (попытки - выигрыши)*5 + 10000*винрейт + очки_джекпота
-                    game_points = 100 * (wins - jackpots) - (tries - wins) * 5 + 10000 * winrate + jackpots * 777
-                else:
-                    # Для других игр: 100*(выигрыши) - (попытки - выигрыши)*5 + 10000*винрейт
-                    game_points = 100 * wins - (tries - wins) * 5 + 10000 * winrate
-                
-                total_points += game_points
-        
-        # Получаем максимальную серию для бонуса
-        max_streak = 0
-        for game in games:
-            streaks = self.get_win_streaks(chat_id, game)
-            for streak in streaks:
-                if streak['id'] == user_id and streak['max_streak'] > max_streak:
-                    max_streak = streak['max_streak']
-        
-        # Бонус за серию (3^серия)
-        streak_bonus = 3 ** max_streak if max_streak > 0 else 0
-        
-        total_points += streak_bonus
-        
-        return round(total_points)
-        
-    except Exception as e:
-        logger.error(f"Error calculating competition points: {e}")
-        return 0
     def unblock_user(self, user_id: int, chat_id: int):
         """Снимает блокировку с пользователя"""
         try:
@@ -388,67 +335,65 @@ class Users:
         except Exception as e:
             logger.error(f"Error resetting all stats: {e}")
             return False
-    def reset_daily_streaks(self):
-    """Сбрасывает текущие серии побед при смене дня"""
-    try:
-        self.cur.execute("UPDATE win_streaks SET current_streak = 0")
-        self.database.conn.commit()
-        logger.info("Сброшены daily серии побед")
-        return True
-    except Exception as e:
-        logger.error(f"Error resetting daily streaks: {e}")
-        return False
 
-def reset_weekly_streaks(self):
-    """Сбрасывает максимальные серии побед при смене недели"""
-    try:
-        self.cur.execute("UPDATE win_streaks SET max_streak = 0")
-        self.database.conn.commit()
-        logger.info("Сброшены weekly серии побед")
-        return True
-    except Exception as e:
-        logger.error(f"Error resetting weekly streaks: {e}")
-        return False
+    def reset_daily_streaks(self):
+        """Сбрасывает текущие серии побед при смене дня"""
+        try:
+            self.cur.execute("UPDATE win_streaks SET current_streak = 0")
+            self.database.conn.commit()
+            logger.info("Сброшены daily серии побед")
+            return True
+        except Exception as e:
+            logger.error(f"Error resetting daily streaks: {e}")
+            return False
+
+    def reset_weekly_streaks(self):
+        """Сбрасывает максимальные серии побед при смене недели"""
+        try:
+            self.cur.execute("UPDATE win_streaks SET max_streak = 0")
+            self.database.conn.commit()
+            logger.info("Сброшены weekly серии побед")
+            return True
+        except Exception as e:
+            logger.error(f"Error resetting weekly streaks: {e}")
+            return False
 
     def update_win_streak(self, user_id: int, chat_id: int, game_type: str, is_win: bool):
-    """Обновляет серию побед для пользователя"""
-    try:
-        # УБИРАЕМ проверку смены дня для daily серий (оставляем только для daily_stats)
-        # Получаем текущую дату для логирования
-        current_date = self.get_current_date()
-        
-        # Получаем серию побед
-        self.cur.execute(
-            "SELECT current_streak, max_streak FROM win_streaks WHERE id = ? AND chat_id = ? AND game_type = ?",
-            (user_id, chat_id, game_type)
-        )
-        result = self.cur.fetchone()
-        
-        current_streak = 0
-        max_streak = 0
-        
-        if result:
-            current_streak, max_streak = result
-        
-        if is_win:
-            current_streak += 1
-            if current_streak > max_streak:
-                max_streak = current_streak
-        else:
+        """Обновляет серию побед для пользователя"""
+        try:
+            # УБИРАЕМ проверку смены дня для daily серий (оставляем только для daily_stats)
+            # Получаем серию побед
+            self.cur.execute(
+                "SELECT current_streak, max_streak FROM win_streaks WHERE id = ? AND chat_id = ? AND game_type = ?",
+                (user_id, chat_id, game_type)
+            )
+            result = self.cur.fetchone()
+            
             current_streak = 0
-        
-        self.cur.execute('''
-            INSERT OR REPLACE INTO win_streaks 
-            (id, chat_id, game_type, current_streak, max_streak, last_win_timestamp) 
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (user_id, chat_id, game_type, current_streak, max_streak, int(time.time()) if is_win else None))
-        
-        self.database.conn.commit()
-        return current_streak, max_streak
-        
-    except Exception as e:
-        logger.error(f"Error updating win streak: {e}")
-        return 0, 0
+            max_streak = 0
+            
+            if result:
+                current_streak, max_streak = result
+            
+            if is_win:
+                current_streak += 1
+                if current_streak > max_streak:
+                    max_streak = current_streak
+            else:
+                current_streak = 0
+            
+            self.cur.execute('''
+                INSERT OR REPLACE INTO win_streaks 
+                (id, chat_id, game_type, current_streak, max_streak, last_win_timestamp) 
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (user_id, chat_id, game_type, current_streak, max_streak, int(time.time()) if is_win else None))
+            
+            self.database.conn.commit()
+            return current_streak, max_streak
+            
+        except Exception as e:
+            logger.error(f"Error updating win streak: {e}")
+            return 0, 0
 
     def get_win_streaks(self, chat_id: int, game_type: str = None):
         """Получает максимальные серии побед"""
@@ -482,13 +427,13 @@ def reset_weekly_streaks(self):
 
     def get_current_date(self):
         """Возвращает текущую дату в формате YYYY-MM-DD"""
-    return datetime.now().strftime("%Y-%m-%d")
+        return datetime.now().strftime("%Y-%m-%d")
 
     def get_current_week_start(self):
         """Возвращает дату начала текущей недели (понедельник)"""
         today = datetime.now().date()
         start_of_week = today - timedelta(days=today.weekday())
-    return start_of_week.strftime("%Y-%m-%d")
+        return start_of_week.strftime("%Y-%m-%d")
 
     def increment_period_stats(self, user_id: int, chat_id: int, game_type: str, tries: int = 0, wins: int = 0, jackpots: int = 0):
         """Увеличивает статистику для текущих дня и недели"""
@@ -778,52 +723,33 @@ def reset_weekly_streaks(self):
             if not tries_data or not wins_data:
                 return 0
             
-            # Для слотов
-            slots_tries = tries_data.get('slots', 0)
-            slots_wins = wins_data.get('slots', 0)
-            slots_jackpots = jackpots_data.get('slots', 0) if jackpots_data else 0
+            # Для всех игр считаем отдельно
+            total_points = 0
             
-            # Другие игры
-            dice_tries = tries_data.get('dice', 0)
-            dice_wins = wins_data.get('dice', 0)
+            # Для каждой игры используем формулу: 100*(выигрыши) - (попытки - выигрыши)*5 + 10000*винрейт
+            games = ['slots', 'dice', 'dart', 'bowl', 'foot', 'bask']
             
-            dart_tries = tries_data.get('dart', 0)
-            dart_wins = wins_data.get('dart', 0)
+            for game in games:
+                tries = tries_data.get(game, 0)
+                wins = wins_data.get(game, 0)
+                
+                if tries > 0:
+                    winrate = wins / tries
+                    
+                    # Для слотов учитываем джекпоты
+                    if game == 'slots':
+                        jackpots = jackpots_data.get('slots', 0) if jackpots_data else 0
+                        # Формула: 100*(выигрыши - джекпоты) - (попытки - выигрыши)*5 + 10000*винрейт + очки_джекпота
+                        game_points = 100 * (wins - jackpots) - (tries - wins) * 5 + 10000 * winrate + jackpots * 777
+                    else:
+                        # Для других игр: 100*(выигрыши) - (попытки - выигрыши)*5 + 10000*винрейт
+                        game_points = 100 * wins - (tries - wins) * 5 + 10000 * winrate
+                    
+                    total_points += game_points
             
-            bowl_tries = tries_data.get('bowl', 0)
-            bowl_wins = wins_data.get('bowl', 0)
-            
-            foot_tries = tries_data.get('foot', 0)
-            foot_wins = wins_data.get('foot', 0)
-            
-            bask_tries = tries_data.get('bask', 0)
-            bask_wins = wins_data.get('bask', 0)
-            
-            # Рассчитываем винрейты
-            slots_winrate = slots_wins / slots_tries if slots_tries > 0 else 0
-            dice_winrate = dice_wins / dice_tries if dice_tries > 0 else 0
-            dart_winrate = dart_wins / dart_tries if dart_tries > 0 else 0
-            bowl_winrate = bowl_wins / bowl_tries if bowl_tries > 0 else 0
-            foot_winrate = foot_wins / foot_tries if foot_tries > 0 else 0
-            bask_winrate = bask_wins / bask_tries if bask_tries > 0 else 0
-            
-            # Формула из Excel: =100*(выигрыши - джекпоты) - (попытки - выигрыши)*5 + 10000*винрейт + очки_джекпота + бонус_места
-            # Очки джекпота = джекпоты * 777
-            # Бонус места = серия^3
-            
-            # Для слотов (с джекпотами)
-            slots_points = 100 * (slots_wins - slots_jackpots) - (slots_tries - slots_wins) * 5 + 10000 * slots_winrate + slots_jackpots * 777
-            
-            # Для других игр (без джекпотов)
-            dice_points = 100 * dice_wins - (dice_tries - dice_wins) * 5 + 10000 * dice_winrate
-            dart_points = 100 * dart_wins - (dart_tries - dart_wins) * 5 + 10000 * dart_winrate
-            bowl_points = 100 * bowl_wins - (bowl_tries - bowl_wins) * 5 + 10000 * bowl_winrate
-            foot_points = 100 * foot_wins - (foot_tries - foot_wins) * 5 + 10000 * foot_winrate
-            bask_points = 100 * bask_wins - (bask_tries - bask_wins) * 5 + 10000 * bask_winrate
-            
-            # Получаем серии побед для бонуса
+            # Получаем максимальную серию для бонуса
             max_streak = 0
-            for game in ['slots', 'dice', 'dart', 'bowl', 'foot', 'bask']:
+            for game in games:
                 streaks = self.get_win_streaks(chat_id, game)
                 for streak in streaks:
                     if streak['id'] == user_id and streak['max_streak'] > max_streak:
@@ -832,8 +758,7 @@ def reset_weekly_streaks(self):
             # Бонус за серию (3^серия)
             streak_bonus = 3 ** max_streak if max_streak > 0 else 0
             
-            # Общая сумма очков
-            total_points = slots_points + dice_points + dart_points + bowl_points + foot_points + bask_points + streak_bonus
+            total_points += streak_bonus
             
             return round(total_points)
             
@@ -864,6 +789,7 @@ def reset_weekly_streaks(self):
         except Exception as e:
             logger.error(f"Error getting competition rating: {e}")
             return []
+
 
 
 
