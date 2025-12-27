@@ -87,10 +87,14 @@ def check_and_reset_periodic_stats():
         # Проверяем, если сейчас 00:00 - сбрасываем дневную статистику
         if current_time == "00:00":
             logger.info("🎊 Полночь! Сбрасываем дневную статистику")
+            # Сбрасываем current_streak для всех пользователей в win_streaks
+            USERS.reset_daily_streaks()
         
         # Проверяем, если сейчас понедельник 00:00 - сбрасываем недельную статистику
         if current_time == "00:00" and current_weekday == 0:
             logger.info("🎊 Понедельник! Сбрасываем недельную статистику")
+            # Сбрасываем max_streak для всех пользователей в win_streaks
+            USERS.reset_weekly_streaks()
         
         # Очищаем старые статистики
         USERS.cleanup_old_period_stats()
@@ -983,3 +987,4 @@ if __name__ == '__main__':
     print("Для остановки нажми Ctrl+C")
     
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
+
