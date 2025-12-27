@@ -170,6 +170,59 @@ class Users:
             logger.error(f"Error blocking user: {e}")
             return False
 
+    def get_competition_points(self, user_id: int, chat_id: int):
+    """Рассчитывает очки пользователя по формуле из Excel"""
+    try:
+        # Получаем общую статистику
+        tries_data = self.get('tries', user_id, chat_id)
+        wins_data = self.get('wins', user_id, chat_id)
+        jackpots_data = self.get('jackpots', user_id, chat_id)
+        
+        if not tries_data or not wins_data:
+            return 0
+        
+        # Для всех игр считаем отдельно
+        total_points = 0
+        
+        # Для каждой игры используем формулу: 100*(выигрыши) - (попытки - выигрыши)*5 + 10000*винрейт
+        games = ['slots', 'dice', 'dart', 'bowl', 'foot', 'bask']
+        
+        for game in games:
+            tries = tries_data.get(game, 0)
+            wins = wins_data.get(game, 0)
+            
+            if tries > 0:
+                winrate = wins / tries
+                
+                # Для слотов учитываем джекпоты
+                if game == 'slots':
+                    jackpots = jackpots_data.get('slots', 0) if jackpots_data else 0
+                    # Формула: 100*(выигрыши - джекпоты) - (попытки - выигрыши)*5 + 10000*винрейт + очки_джекпота
+                    game_points = 100 * (wins - jackpots) - (tries - wins) * 5 + 10000 * winrate + jackpots * 777
+                else:
+                    # Для других игр: 100*(выигрыши) - (попытки - выигрыши)*5 + 10000*винрейт
+                    game_points = 100 * wins - (tries - wins) * 5 + 10000 * winrate
+                
+                total_points += game_points
+        
+        # Получаем максимальную серию для бонуса
+        max_streak = 0
+        for game in games:
+            streaks = self.get_win_streaks(chat_id, game)
+            for streak in streaks:
+                if streak['id'] == user_id and streak['max_streak'] > max_streak:
+                    max_streak = streak['max_streak']
+        
+        # Бонус за серию (3^серия)
+        streak_bonus = 3 ** max_streak if max_streak > 0 else 0
+        
+        total_points += streak_bonus
+        
+        return round(total_points)
+        
+    except Exception as e:
+        logger.error(f"Error calculating competition points: {e}")
+        return 0
     def unblock_user(self, user_id: int, chat_id: int):
         """Снимает блокировку с пользователя"""
         try:
@@ -811,5 +864,6 @@ def reset_weekly_streaks(self):
         except Exception as e:
             logger.error(f"Error getting competition rating: {e}")
             return []
+
 
 
