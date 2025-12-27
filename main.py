@@ -701,7 +701,8 @@ async def admin_panel(callback: types.CallbackQuery):
         if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
             await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
             return
-    except:
+    except Exception as e:
+        logger.error(f"Ошибка при проверке прав админа: {e}")
         if not USERS.is_admin(user_id):
             await callback.answer("❌ У вас нет прав администратора", show_alert=True)
             return
@@ -735,7 +736,8 @@ async def admin_help_requests(callback: types.CallbackQuery):
         if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
             await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
             return
-    except:
+    except Exception as e:
+        logger.error(f"Ошибка при проверке прав админа: {e}")
         if not USERS.is_admin(user_id):
             await callback.answer("❌ У вас нет прав администратора", show_alert=True)
             return
@@ -811,7 +813,8 @@ async def admin_help_navigate(callback: types.CallbackQuery):
         if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
             await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
             return
-    except:
+    except Exception as e:
+        logger.error(f"Ошибка при проверке прав админа: {e}")
         if not USERS.is_admin(user_id):
             await callback.answer("❌ У вас нет прав администратора", show_alert=True)
             return
@@ -836,7 +839,8 @@ async def admin_help_approve(callback: types.CallbackQuery):
         if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
             await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
             return
-    except:
+    except Exception as e:
+        logger.error(f"Ошибка при проверке прав админа: {e}")
         if not USERS.is_admin(user_id):
             await callback.answer("❌ У вас нет прав администратора", show_alert=True)
             return
@@ -893,7 +897,8 @@ async def admin_help_reject(callback: types.CallbackQuery):
         if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
             await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
             return
-    except:
+    except Exception as e:
+        logger.error(f"Ошибка при проверке прав админа: {e}")
         if not USERS.is_admin(user_id):
             await callback.answer("❌ У вас нет прав администратора", show_alert=True)
             return
@@ -930,7 +935,8 @@ async def admin_block_user(callback: types.CallbackQuery):
         if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
             await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
             return
-    except:
+    except Exception as e:
+        logger.error(f"Ошибка при проверке прав админа: {e}")
         if not USERS.is_admin(user_id):
             await callback.answer("❌ У вас нет прав администратора", show_alert=True)
             return
@@ -961,7 +967,8 @@ async def admin_block_select_time(callback: types.CallbackQuery):
         if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
             await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
             return
-    except:
+    except Exception as e:
+        logger.error(f"Ошибка при проверке прав админа: {e}")
         if not USERS.is_admin(user_id):
             await callback.answer("❌ У вас нет прав администратора", show_alert=True)
             return
@@ -1007,7 +1014,8 @@ async def admin_block_confirm(callback: types.CallbackQuery):
         if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
             await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
             return
-    except:
+    except Exception as e:
+        logger.error(f"Ошибка при проверке прав админа: {e}")
         if not USERS.is_admin(user_id):
             await callback.answer("❌ У вас нет прав администратора", show_alert=True)
             return
@@ -1069,9 +1077,11 @@ async def admin_unblock_user(callback: types.CallbackQuery):
     # Проверка прав
     try:
         chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
+        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
             await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
             return
-    except:
+    except Exception as e:
+        logger.error(f"Ошибка при проверке прав админа: {e}")
         if not USERS.is_admin(user_id):
             await callback.answer("❌ У вас нет прав администратора", show_alert=True)
             return
@@ -1123,7 +1133,8 @@ async def admin_unblock_execute(callback: types.CallbackQuery):
         if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
             await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
             return
-    except:
+    except Exception as e:
+        logger.error(f"Ошибка при проверке прав админа: {e}")
         if not USERS.is_admin(user_id):
             await callback.answer("❌ У вас нет прав администратора", show_alert=True)
             return
@@ -1179,7 +1190,8 @@ async def admin_reset_all_ratings(callback: types.CallbackQuery):
         if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
             await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
             return
-    except:
+    except Exception as e:
+        logger.error(f"Ошибка при проверке прав админа: {e}")
         if not USERS.is_admin(user_id):
             await callback.answer("❌ У вас нет прав администратора", show_alert=True)
             return
@@ -1280,31 +1292,6 @@ async def my_streak(message: types.Message):
     await BOT.send_message(
         message.chat.id,
         '\n'.join(text_lines),
-        message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
-    )
-
-# 🔥 НОВАЯ КОМАНДА ДЛЯ НОВОГОДНЕГО ПРИВЕТСТВИЯ
-@DP.message_handler(commands=['newyear'])
-async def new_year_command(message: types.Message):
-    new_year_greeting = get_new_year_greeting()
-    
-    text = f"""{new_year_greeting} <b>С НОВЫМ ГОДОМ!</b>
-
-🎄 Пусть новый год принесет вам:
-✨ Удачи в играх
-🎁 Много выигрышей
-🏆 Высоких рейтингов
-❤️ Радости и счастья
-
-🎉 Желаем, чтобы каждый бросок кубика был удачным,
-каждый слот приносил джекпот,
-а каждый гол был победным!
-
-{new_year_greeting} <i>С праздником!</i>"""
-    
-    await BOT.send_message(
-        message.chat.id,
-        text,
         message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
     )
 
