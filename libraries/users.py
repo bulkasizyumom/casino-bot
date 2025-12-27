@@ -335,6 +335,27 @@ class Users:
         except Exception as e:
             logger.error(f"Error resetting all stats: {e}")
             return False
+    def reset_daily_streaks(self):
+    """Сбрасывает текущие серии побед при смене дня"""
+    try:
+        self.cur.execute("UPDATE win_streaks SET current_streak = 0")
+        self.database.conn.commit()
+        logger.info("Сброшены daily серии побед")
+        return True
+    except Exception as e:
+        logger.error(f"Error resetting daily streaks: {e}")
+        return False
+
+def reset_weekly_streaks(self):
+    """Сбрасывает максимальные серии побед при смене недели"""
+    try:
+        self.cur.execute("UPDATE win_streaks SET max_streak = 0")
+        self.database.conn.commit()
+        logger.info("Сброшены weekly серии побед")
+        return True
+    except Exception as e:
+        logger.error(f"Error resetting weekly streaks: {e}")
+        return False
 
     def update_win_streak(self, user_id: int, chat_id: int, game_type: str, is_win: bool):
     """Обновляет серию побед для пользователя"""
@@ -790,4 +811,5 @@ class Users:
         except Exception as e:
             logger.error(f"Error getting competition rating: {e}")
             return []
+
 
