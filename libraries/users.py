@@ -766,6 +766,25 @@ class Users:
             logger.error(f"Error calculating competition points: {e}")
             return 0
 
+    def reset_competition_stats(self):
+    """Сбрасывает только статистику для соревнований"""
+    try:
+        self.cur.execute("BEGIN")
+        # Сбрасываем только таблицы, связанные со статистикой
+        self.cur.execute("DELETE FROM tries")
+        self.cur.execute("DELETE FROM wins")
+        self.cur.execute("DELETE FROM jackpots")
+        self.cur.execute("DELETE FROM daily_stats")
+        self.cur.execute("DELETE FROM weekly_stats")
+        self.cur.execute("DELETE FROM win_streaks")
+        # НЕ сбрасываем блокировки и сообщения помощи
+        self.cur.execute("COMMIT")
+        self.database.conn.commit()
+        logger.info("Статистика соревнований сброшена")
+        return True
+    except Exception as e:
+        logger.error(f"Error resetting competition stats: {e}")
+        return False
     def get_competition_rating(self, chat_id: int):
         """Получает рейтинг пользователей по очкам"""
         try:
@@ -789,6 +808,7 @@ class Users:
         except Exception as e:
             logger.error(f"Error getting competition rating: {e}")
             return []
+
 
 
 
