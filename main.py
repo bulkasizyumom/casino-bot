@@ -282,6 +282,7 @@ async def info_command(message: types.Message):
     )
 
 # 🔥 НОВЫЙ ХЕНДЛЕР ДЛЯ СОРЕВНОВАНИЙ
+# 🔥 НОВЫЙ ХЕНДЛЕР ДЛЯ СОРЕВНОВАНИЙ
 @DP.callback_query_handler(lambda c: c.data == 'competition_main')
 async def competition_main(callback: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup(row_width=1)
@@ -289,7 +290,7 @@ async def competition_main(callback: types.CallbackQuery):
         InlineKeyboardButton('🏅 Общий рейтинг', callback_data='competition_rating'),
         InlineKeyboardButton('👤 Мои очки', callback_data='competition_my_points')
     )
-    keyboard.add(InlineKeyboardButton('📊 Формула подсчета', callback_data='competition_formula'))
+    # Убрана кнопка "📊 Формула подсчета"
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='back-to-main'))
 
     await callback.message.edit_text(
@@ -383,6 +384,7 @@ async def competition_rating(callback: types.CallbackQuery):
     
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='competition_main'))
+    # Убрана кнопка "📊 Формула подсчета"
     
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
@@ -428,37 +430,12 @@ async def competition_my_points(callback: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🏅 Общий рейтинг', callback_data='competition_rating'))
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='competition_main'))
+    # Убрана кнопка "📊 Формула подсчета"
     
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
-# Формула подсчета
-@DP.callback_query_handler(lambda c: c.data == 'competition_formula')
-async def competition_formula(callback: types.CallbackQuery):
-    text = f"""📊 <b>ФОРМУЛА ПОДСЧЕТА ОЧКОВ</b>
 
-Очки рассчитываются по формуле из Excel файла:
-
-<code>100*(Выигрыши - Джекпоты) - (Попытки - Выигрыши)*5 + 10000*Винрейт + Очки_Джекпота + Бонус_Серии</code>
-
-<b>Где:</b>
-• Очки_Джекпота = Джекпоты × 777
-• Бонус_Серии = 3<sup>максимальная_серия</sup>
-• Винрейт = Выигрыши / Попытки
-
-<b>Примечание:</b>
-• Джекпоты учитываются только для слотов 🎰
-• Серии побед считаются для всех игр
-• Бонус за серию применяется ко всем играм
-
-{get_new_year_greeting()} <i>Удачи в соревнованиях!</i>"""
-    
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton('🏅 Общий рейтинг', callback_data='competition_rating'))
-    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='competition_main'))
-    
-    await callback.message.edit_text(text, reply_markup=keyboard)
-    await callback.answer()
 
 # 🔥 ОБНОВЛЕННАЯ КОМАНДА ПОМОЩИ
 @DP.message_handler(commands=['help'])
@@ -1019,6 +996,7 @@ if __name__ == '__main__':
     print("Для остановки нажми Ctrl+C")
     
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
+
 
 
 
