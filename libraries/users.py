@@ -337,60 +337,44 @@ class Users:
             return False
 
     def update_win_streak(self, user_id: int, chat_id: int, game_type: str, is_win: bool):
-        """Обновляет серию побед для пользователя с проверкой смены дня"""
-        try:
-            # Проверяем, не сменился ли день для обнуления daily серий
-            current_date = self.get_current_date()
-            
-            # Получаем дату последнего обновления серии
-            self.cur.execute(
-                "SELECT last_win_timestamp FROM win_streaks WHERE id = ? AND chat_id = ? AND game_type = ?",
-                (user_id, chat_id, game_type)
-            )
-            result = self.cur.fetchone()
-            
-            # Если последнее обновление было не сегодня - сбрасываем current_streak
-            if result and result[0]:
-                last_update_date = datetime.fromtimestamp(result[0]).strftime("%Y-%m-%d")
-                if last_update_date != current_date:
-                    # Сменился день - сбрасываем текущую серию
-                    self.cur.execute(
-                        "UPDATE win_streaks SET current_streak = 0 WHERE id = ? AND chat_id = ? AND game_type = ?",
-                        (user_id, chat_id, game_type)
-                    )
-            
-            # Продолжаем обычную логику обновления серии
-            self.cur.execute(
-                "SELECT current_streak, max_streak FROM win_streaks WHERE id = ? AND chat_id = ? AND game_type = ?",
-                (user_id, chat_id, game_type)
-            )
-            result = self.cur.fetchone()
-            
+    """Обновляет серию побед для пользователя"""
+    try:
+        # УБИРАЕМ проверку смены дня для daily серий (оставляем только для daily_stats)
+        # Получаем текущую дату для логирования
+        current_date = self.get_current_date()
+        
+        # Получаем серию побед
+        self.cur.execute(
+            "SELECT current_streak, max_streak FROM win_streaks WHERE id = ? AND chat_id = ? AND game_type = ?",
+            (user_id, chat_id, game_type)
+        )
+        result = self.cur.fetchone()
+        
+        current_streak = 0
+        max_streak = 0
+        
+        if result:
+            current_streak, max_streak = result
+        
+        if is_win:
+            current_streak += 1
+            if current_streak > max_streak:
+                max_streak = current_streak
+        else:
             current_streak = 0
-            max_streak = 0
-            
-            if result:
-                current_streak, max_streak = result
-            
-            if is_win:
-                current_streak += 1
-                if current_streak > max_streak:
-                    max_streak = current_streak
-            else:
-                current_streak = 0
-            
-            self.cur.execute('''
-                INSERT OR REPLACE INTO win_streaks 
-                (id, chat_id, game_type, current_streak, max_streak, last_win_timestamp) 
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (user_id, chat_id, game_type, current_streak, max_streak, int(time.time()) if is_win else None))
-            
-            self.database.conn.commit()
-            return current_streak, max_streak
-            
-        except Exception as e:
-            logger.error(f"Error updating win streak: {e}")
-            return 0, 0
+        
+        self.cur.execute('''
+            INSERT OR REPLACE INTO win_streaks 
+            (id, chat_id, game_type, current_streak, max_streak, last_win_timestamp) 
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (user_id, chat_id, game_type, current_streak, max_streak, int(time.time()) if is_win else None))
+        
+        self.database.conn.commit()
+        return current_streak, max_streak
+        
+    except Exception as e:
+        logger.error(f"Error updating win streak: {e}")
+        return 0, 0
 
     def get_win_streaks(self, chat_id: int, game_type: str = None):
         """Получает максимальные серии побед"""
@@ -424,14 +408,13 @@ class Users:
 
     def get_current_date(self):
         """Возвращает текущую дату в формате YYYY-MM-DD"""
-        return datetime.now().strftime("%Y-%m-%d")
+    return datetime.now().strftime("%Y-%m-%d")
 
     def get_current_week_start(self):
         """Возвращает дату начала текущей недели (понедельник)"""
         today = datetime.now().date()
-        # weekday() возвращает: 0-понедельник, 6-воскресенье
         start_of_week = today - timedelta(days=today.weekday())
-        return start_of_week.strftime("%Y-%m-%d")
+    return start_of_week.strftime("%Y-%m-%d")
 
     def increment_period_stats(self, user_id: int, chat_id: int, game_type: str, tries: int = 0, wins: int = 0, jackpots: int = 0):
         """Увеличивает статистику для текущих дня и недели"""
@@ -807,3 +790,4 @@ class Users:
         except Exception as e:
             logger.error(f"Error getting competition rating: {e}")
             return []
+
