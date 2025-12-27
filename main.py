@@ -51,18 +51,16 @@ GAMES = {
     '🎲': {'name': 'dice',  'win': [1]},
 }
 
-# 🔥 НОВОГОДНЕЕ ОФОРМЛЕНИЕ
+# 🔥 НОВОГОДНЕЕ ОФОРМЛЕНИЕ (убрали Деда Мороза и Снегурочку)
 NEW_YEAR_EMOJIS = {
     '🎄': 'новогодняя елка',
-    '🎅': 'Санта Клаус',
-    '🤶': 'Снегурочка',
-    '🦌': 'олень',
+    '☃️': 'снеговик',
+    '❄️': 'снежинка',
+    '✨': 'праздничные огоньки',
+    '🎁': 'подарок',
     '🍾': 'шампанское',
     '🎉': 'праздничные конфетти',
-    '✨': 'праздничные огоньки',
-    '❄️': 'снежинка',
-    '☃️': 'снеговик',
-    '🎁': 'подарок'
+    '🦌': 'олень',
 }
 
 def get_new_year_greeting():
@@ -189,26 +187,6 @@ class BlockedUsersMiddleware(BaseMiddleware):
             await callback_query.answer("❌ Вы заблокированы в этом чате", show_alert=True)
             raise CancelHandler()
 
-# 🔥 НОВЫЙ МИДЛВАРЬ ДЛЯ ПРОВЕРКИ ПРАВ АДМИНА В ЧАТЕ
-class ChatAdminMiddleware(BaseMiddleware):
-    async def on_pre_process_callback_query(self, callback_query: types.CallbackQuery, data: dict):
-        user_id = callback_query.from_user.id
-        chat_id = callback_query.message.chat.id
-        
-        # Проверяем, если пользователь - Санек (1995856157)
-        if user_id == 1995856157:
-            try:
-                # Получаем информацию о пользователе в чате
-                chat_member = await BOT.get_chat_member(chat_id, user_id)
-                # Проверяем, является ли он администратором в этом чате
-                if chat_member.status not in ['administrator', 'creator']:
-                    # Если не админ в чате, скрываем админ-кнопки
-                    if callback_query.data == 'admin':
-                        await callback_query.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
-                        raise CancelHandler()
-            except Exception as e:
-                logger.error(f"Ошибка при проверке прав админа: {e}")
-
 class UserRegistrationMiddleware(BaseMiddleware):
     async def on_pre_process_message(self, message: types.Message, data: dict):
         if not USERS.get('users', message.from_user.id):
@@ -216,8 +194,7 @@ class UserRegistrationMiddleware(BaseMiddleware):
 
 # 🔥 РЕГИСТРИРУЕМ МИДЛВАРИ В ПРАВИЛЬНОМ ПОРЯДКЕ
 DP.middleware.setup(BlockedUsersMiddleware())  # ПЕРВЫЙ - ручная блокировка
-DP.middleware.setup(ChatAdminMiddleware())     # ВТОРОЙ - проверка прав админа в чате
-DP.middleware.setup(UserRegistrationMiddleware())  # ТРЕТИЙ - регистрация
+DP.middleware.setup(UserRegistrationMiddleware())  # ВТОРОЙ - регистрация
 
 # main menu handler
 @DP.message_handler(commands=['casino', 'start'])
@@ -232,33 +209,20 @@ async def main_menu(message: types.Message):
         f"Command={message.text}"
     )
 
-    # Новогоднее приветствие
-    new_year_greeting = get_new_year_greeting()
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'),
-        InlineKeyboardButton('🎯 Соревнования', callback_data='competition_main')
-    )
-    
-    # Добавляем кнопку для админов (с проверкой через мидлварь)
+    # Добавляем кнопку для админов (как в старой версии)
     if USERS.is_admin(user_id):
-        try:
-            chat_member = await BOT.get_chat_member(chat_id, user_id)
-            if chat_member.status in ['administrator', 'creator']:
-                keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
-        except:
-            # Если не можем проверить, показываем кнопку для админов в базе
-            keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
+        keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
 
     await BOT.send_message(
         chat_id,
-        f"""{new_year_greeting} <b>Здравствуйте, {f"@{message.from_user.username}" if message.from_user.username else message.from_user.full_name}!</b>
+        f"""{get_new_year_greeting()} <b>Здравствуйте, {f"@{message.from_user.username}" if message.from_user.username else message.from_user.full_name}!</b>
 
-🎄 Добро пожаловать в новогоднее казино-бот! Пусть удача будет с вами в этом году! ✨
+Добро пожаловать в казино-бот! Используйте кнопки ниже для навигации.
 
-ℹ️ <b>Информация:</b> /info
-🎮 <b>Игры:</b> /games""",
+ℹ️ <b>Информация:</b> /info""",
         message_thread_id = message.message_thread_id if hasattr(message, 'message_thread_id') else None,
         reply_markup=keyboard
     )
@@ -300,18 +264,10 @@ async def info_command(message: types.Message):
 {get_new_year_greeting()} <i>Счастливого Нового Года!</i>"""
 
     keyboard = InlineKeyboardMarkup()
-    keyboard.add(
-        InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'),
-        InlineKeyboardButton('🎯 Соревнования', callback_data='competition_main')
-    )
+    keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
     
     if USERS.is_admin(message.from_user.id):
-        try:
-            chat_member = await BOT.get_chat_member(message.chat.id, message.from_user.id)
-            if chat_member.status in ['administrator', 'creator']:
-                keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
-        except:
-            keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
+        keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
 
     await BOT.send_message(
         message.chat.id, text,
@@ -332,9 +288,7 @@ async def competition_main(callback: types.CallbackQuery):
 
     await callback.message.edit_text(
         f"🎯 <b>Соревнования</b>\n\n"
-        f"{get_new_year_greeting()} <i>Новогодний турнир!</i>\n\n"
-        f"Здесь вы можете посмотреть рейтинг участников по очкам, "
-        f"рассчитанным по специальной формуле из Excel.",
+        f"{get_new_year_greeting()} <i>Новогодний турнир!</i>",
         reply_markup=keyboard
     )
     await callback.answer()
@@ -474,17 +428,13 @@ async def help_command(message: types.Message):
     
     # Проверяем, заблокирован ли пользователь
     if not USERS.is_user_blocked(user_id, chat_id):
-        # Если не заблокирован, показываем обычное сообщение
+        # Если не заблокирован, показываем обычное сообщение (как в старой версии)
         await BOT.send_message(
             chat_id,
-            "ℹ️ <b>Помощь по использованию бота</b>\n\n"
-            "Если у вас возникли вопросы или проблемы с ботом, "
-            "обратитесь к администратору чата.\n\n"
-            "📋 <b>Основные команды:</b>\n"
-            "/start - Главное меню\n"
-            "/info - Информация о боте\n"
-            "/games - Список игр\n"
-            "/mystreak - Ваши серии побед",
+            "ℹ️ <b>Если вас заблокировали и вы не согласны с этим</b>\n\n"
+            "Нажмите на кнопку ниже, чтобы отправить заявку администратору.\n"
+            "Ваша заявка будет рассмотрена в кратчайшие сроки.\n\n"
+            "<i>Эта кнопка доступна только заблокированным пользователям.</i>",
             message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
         )
         return
@@ -690,22 +640,12 @@ async def help_cancel(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-# 🔥 ПРОСТАЯ АДМИН ПАНЕЛЬ (упрощенная)
+# 🔥 ПРОСТАЯ АДМИН ПАНЕЛЬ (как в старой версии)
 @DP.callback_query_handler(lambda c: c.data == 'admin')
 async def admin_panel(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    
-    # Дополнительная проверка прав админа в чате
-    try:
-        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
-        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
-            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
-            return
-    except Exception as e:
-        logger.error(f"Ошибка при проверке прав админа: {e}")
-        if not USERS.is_admin(user_id):
-            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-            return
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
 
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
@@ -713,10 +653,9 @@ async def admin_panel(callback: types.CallbackQuery):
         InlineKeyboardButton('✅ Разблокировать', callback_data='admin-unblock-user')
     )
     keyboard.add(
-        InlineKeyboardButton('📨 Заявки на разблокировку', callback_data='admin-help-requests'),
-        InlineKeyboardButton('♻️ Сбросить рейтинги', callback_data='admin-reset-all')
+        InlineKeyboardButton('♻️ Сбросить рейтинги', callback_data='admin-reset-all'),
+        InlineKeyboardButton('🔙 Назад', callback_data='back-to-main')
     )
-    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='back-to-main'))
 
     await callback.message.edit_text(
         f"⚙️ <b>Панель администратора</b>\n\n"
@@ -725,221 +664,12 @@ async def admin_panel(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-# 🔥 ПРОСМОТР ЗАЯВОК НА РАЗБЛОКИРОВКУ
-@DP.callback_query_handler(lambda c: c.data == 'admin-help-requests')
-async def admin_help_requests(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    
-    # Проверка прав
-    try:
-        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
-        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
-            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
-            return
-    except Exception as e:
-        logger.error(f"Ошибка при проверке прав админа: {e}")
-        if not USERS.is_admin(user_id):
-            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-            return
-    
-    # Получаем заявки
-    help_requests = USERS.get_pending_help_messages()
-    
-    if not help_requests:
-        keyboard = InlineKeyboardMarkup()
-        keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
-        
-        await callback.message.edit_text(
-            f"📭 <b>Нет ожидающих заявок на разблокировку</b>\n\n"
-            f"{get_new_year_greeting()} <i>Все спокойно!</i>",
-            reply_markup=keyboard
-        )
-        await callback.answer()
-        return
-    
-    # Показываем первую заявку
-    await show_help_request(callback, help_requests, 0)
-
-async def show_help_request(callback: types.CallbackQuery, requests: list, index: int):
-    if index < 0 or index >= len(requests):
-        return
-    
-    request = requests[index]
-    
-    # Получаем информацию о пользователе
-    user_data = USERS.get('users', request['user_id'])
-    user_name = user_data.get('name', 'Пользователь') if user_data else 'Пользователь'
-    
-    text = (
-        f"🚨 <b>ЗАЯВКА НА РАЗБЛОКИРОВКУ #{index + 1}</b>\n\n"
-        f"👤 <b>Пользователь:</b> {user_name}\n"
-        f"🆔 <b>ID:</b> {request['user_id']}\n"
-        f"📝 <b>Причина обжалования:</b> {request.get('reason', 'Не указана')}\n"
-        f"⏰ <b>Время заявки:</b> {request['timestamp']}\n\n"
-        f"{request['message_text']}\n\n"
-        f"<i>Заявка {index + 1} из {len(requests)}</i>"
-    )
-    
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    
-    # Кнопки навигации
-    nav_buttons = []
-    if index > 0:
-        nav_buttons.append(InlineKeyboardButton('◀️ Предыдущая', callback_data=f'admin_help_nav_{index-1}'))
-    if index < len(requests) - 1:
-        nav_buttons.append(InlineKeyboardButton('Следующая ▶️', callback_data=f'admin_help_nav_{index+1}'))
-    
-    if nav_buttons:
-        keyboard.row(*nav_buttons)
-    
-    # Кнопки действий
-    keyboard.row(
-        InlineKeyboardButton('✅ Разблокировать', callback_data=f'admin_help_approve_{request["message_id"]}_{request["user_id"]}_{request["chat_id"]}'),
-        InlineKeyboardButton('❌ Отклонить', callback_data=f'admin_help_reject_{request["message_id"]}')
-    )
-    keyboard.add(InlineKeyboardButton('🔙 Назад в админку', callback_data='admin'))
-    
-    await callback.message.edit_text(text, reply_markup=keyboard)
-    await callback.answer()
-
-# Навигация по заявкам
-@DP.callback_query_handler(lambda c: c.data.startswith('admin_help_nav_'))
-async def admin_help_navigate(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    
-    # Проверка прав
-    try:
-        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
-        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
-            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
-            return
-    except Exception as e:
-        logger.error(f"Ошибка при проверке прав админа: {e}")
-        if not USERS.is_admin(user_id):
-            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-            return
-    
-    index = int(callback.data.split('_')[3])
-    help_requests = USERS.get_pending_help_messages()
-    
-    if not help_requests:
-        await callback.answer("❌ Больше нет заявок", show_alert=True)
-        return
-    
-    await show_help_request(callback, help_requests, index)
-
-# Одобрение заявки
-@DP.callback_query_handler(lambda c: c.data.startswith('admin_help_approve_'))
-async def admin_help_approve(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    
-    # Проверка прав
-    try:
-        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
-        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
-            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
-            return
-    except Exception as e:
-        logger.error(f"Ошибка при проверке прав админа: {e}")
-        if not USERS.is_admin(user_id):
-            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-            return
-    
-    data_parts = callback.data.split('_')
-    message_id = int(data_parts[3])
-    target_user_id = int(data_parts[4])
-    chat_id = int(data_parts[5])
-    
-    # Разблокируем пользователя
-    success = USERS.unblock_user(target_user_id, chat_id)
-    
-    if success:
-        # Обновляем статус заявки
-        USERS.update_help_message_status(message_id, 'approved')
-        
-        # Уведомляем пользователя
-        try:
-            await BOT.send_message(
-                target_user_id,
-                f"✅ <b>Ваша заявка на разблокировку одобрена!</b>\n\n"
-                f"Администратор рассмотрел вашу заявку и снял блокировку.\n\n"
-                f"{get_new_year_greeting()} <i>Теперь вы можете снова использовать бота!</i>"
-            )
-        except:
-            pass
-        
-        await callback.answer("✅ Пользователь разблокирован!", show_alert=True)
-        
-        # Обновляем список заявок
-        help_requests = USERS.get_pending_help_messages()
-        if help_requests:
-            await show_help_request(callback, help_requests, 0)
-        else:
-            keyboard = InlineKeyboardMarkup()
-            keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
-            
-            await callback.message.edit_text(
-                f"✅ <b>Пользователь успешно разблокирован!</b>\n\n"
-                f"{get_new_year_greeting()} <i>Больше нет ожидающих заявок.</i>",
-                reply_markup=keyboard
-            )
-    else:
-        await callback.answer("❌ Ошибка при разблокировке", show_alert=True)
-
-# Отклонение заявки
-@DP.callback_query_handler(lambda c: c.data.startswith('admin_help_reject_'))
-async def admin_help_reject(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    
-    # Проверка прав
-    try:
-        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
-        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
-            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
-            return
-    except Exception as e:
-        logger.error(f"Ошибка при проверке прав админа: {e}")
-        if not USERS.is_admin(user_id):
-            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-            return
-    
-    message_id = int(callback.data.split('_')[3])
-    
-    # Обновляем статус заявки
-    USERS.update_help_message_status(message_id, 'rejected')
-    
-    await callback.answer("❌ Заявка отклонена", show_alert=True)
-    
-    # Обновляем список заявок
-    help_requests = USERS.get_pending_help_messages()
-    if help_requests:
-        await show_help_request(callback, help_requests, 0)
-    else:
-        keyboard = InlineKeyboardMarkup()
-        keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
-        
-        await callback.message.edit_text(
-            f"❌ <b>Заявка отклонена</b>\n\n"
-            f"{get_new_year_greeting()} <i>Больше нет ожидающих заявок.</i>",
-            reply_markup=keyboard
-        )
-
 # Выбор пользователя для блокировки
 @DP.callback_query_handler(lambda c: c.data == 'admin-block-user')
 async def admin_block_user(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    
-    # Проверка прав
-    try:
-        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
-        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
-            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
-            return
-    except Exception as e:
-        logger.error(f"Ошибка при проверке прав админа: {e}")
-        if not USERS.is_admin(user_id):
-            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-            return
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
     
     keyboard = InlineKeyboardMarkup(row_width=1)
     
@@ -959,19 +689,9 @@ async def admin_block_user(callback: types.CallbackQuery):
 # Выбор времени блокировки
 @DP.callback_query_handler(lambda c: c.data.startswith('block_select_user-'))
 async def admin_block_select_time(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    
-    # Проверка прав
-    try:
-        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
-        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
-            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
-            return
-    except Exception as e:
-        logger.error(f"Ошибка при проверке прав админа: {e}")
-        if not USERS.is_admin(user_id):
-            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-            return
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
     
     target_user_id = int(callback.data.split('-')[1])
     user_name = KNOWN_USERS.get(target_user_id, f"ID {target_user_id}")
@@ -1006,19 +726,9 @@ async def admin_block_select_time(callback: types.CallbackQuery):
 # Подтверждение и выполнение блокировки
 @DP.callback_query_handler(lambda c: c.data.startswith('block_confirm-'))
 async def admin_block_confirm(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    
-    # Проверка прав
-    try:
-        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
-        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
-            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
-            return
-    except Exception as e:
-        logger.error(f"Ошибка при проверке прав админа: {e}")
-        if not USERS.is_admin(user_id):
-            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-            return
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
     
     data_parts = callback.data.split('-')
     target_user_id = int(data_parts[1])
@@ -1072,19 +782,9 @@ async def admin_block_confirm(callback: types.CallbackQuery):
 # Выбор пользователя для разблокировки
 @DP.callback_query_handler(lambda c: c.data == 'admin-unblock-user')
 async def admin_unblock_user(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    
-    # Проверка прав
-    try:
-        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
-        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
-            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
-            return
-    except Exception as e:
-        logger.error(f"Ошибка при проверке прав админа: {e}")
-        if not USERS.is_admin(user_id):
-            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-            return
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
     
     # Получаем список заблокированных пользователей в текущем чате
     chat_id = callback.message.chat.id
@@ -1125,19 +825,9 @@ async def admin_unblock_user(callback: types.CallbackQuery):
 # Выполнение разблокировки
 @DP.callback_query_handler(lambda c: c.data.startswith('unblock_user-'))
 async def admin_unblock_execute(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    
-    # Проверка прав
-    try:
-        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
-        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
-            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
-            return
-    except Exception as e:
-        logger.error(f"Ошибка при проверке прав админа: {e}")
-        if not USERS.is_admin(user_id):
-            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-            return
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
     
     target_user_id = int(callback.data.split('-')[1])
     user_name = KNOWN_USERS.get(target_user_id, "Пользователь")
@@ -1182,19 +872,9 @@ async def admin_unblock_execute(callback: types.CallbackQuery):
 
 @DP.callback_query_handler(lambda c: c.data == 'admin-reset-all')
 async def admin_reset_all_ratings(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    
-    # Проверка прав
-    try:
-        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
-        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
-            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
-            return
-    except Exception as e:
-        logger.error(f"Ошибка при проверке прав админа: {e}")
-        if not USERS.is_admin(user_id):
-            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
-            return
+    if not USERS.is_admin(callback.from_user.id):
+        await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+        return
 
     success = USERS.reset_all_stats()
 
