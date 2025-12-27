@@ -71,6 +71,10 @@ def get_new_year_greeting():
     greeting_emojis = [emoji_list[i % len(emoji_list)] for i in range(3)]
     return f"{' '.join(greeting_emojis)}"
 
+# 🔥 СОСТОЯНИЯ ДЛЯ ВЫБОРА ПРИЧИНЫ
+class HelpStates(StatesGroup):
+    waiting_for_reason = State()
+
 # 🔥 ФУНКЦИЯ ДЛЯ ОБНОВЛЕНИЯ ПЕРИОДИЧЕСКОЙ СТАТИСТИКИ
 def check_and_reset_periodic_stats():
     """Проверяет и обновляет периодическую статистику при смене дня/недели"""
@@ -85,12 +89,10 @@ def check_and_reset_periodic_stats():
         # Проверяем, если сейчас 00:00 - сбрасываем дневную статистику
         if current_time == "00:00":
             logger.info("🎊 Полночь! Сбрасываем дневную статистику")
-            # Можно добавить сброс дневных серий или других дневных данных
         
         # Проверяем, если сейчас понедельник 00:00 - сбрасываем недельную статистику
         if current_time == "00:00" and current_weekday == 0:
             logger.info("🎊 Понедельник! Сбрасываем недельную статистику")
-            # Можно добавить сброс недельных данных
         
         # Очищаем старые статистики
         USERS.cleanup_old_period_stats()
@@ -178,8 +180,8 @@ class BlockedUsersMiddleware(BaseMiddleware):
         user_id = callback_query.from_user.id
         chat_id = callback_query.message.chat.id
         
-        # Исключаем кнопку помощи из блокировки
-        if callback_query.data == 'help_send_request':
+        # Исключаем кнопки помощи из блокировки
+        if callback_query.data in ['help_send_request', 'help_select_reason', 'help_custom_reason']:
             return
             
         if USERS.is_user_blocked(user_id, chat_id):
@@ -464,40 +466,146 @@ async def competition_formula(callback: types.CallbackQuery):
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
-# Команда помощи для заблокированных пользователей (УПРОЩЕННАЯ)
+# 🔥 ОБНОВЛЕННАЯ КОМАНДА ПОМОЩИ
 @DP.message_handler(commands=['help'])
 async def help_command(message: types.Message):
     user_id = message.from_user.id
     chat_id = message.chat.id
     
-    # Всегда показываем одно и то же сообщение с кнопкой
+    # Проверяем, заблокирован ли пользователь
+    if not USERS.is_user_blocked(user_id, chat_id):
+        # Если не заблокирован, показываем обычное сообщение
+        await BOT.send_message(
+            chat_id,
+            "ℹ️ <b>Помощь по использованию бота</b>\n\n"
+            "Если у вас возникли вопросы или проблемы с ботом, "
+            "обратитесь к администратору чата.\n\n"
+            "📋 <b>Основные команды:</b>\n"
+            "/start - Главное меню\n"
+            "/info - Информация о боте\n"
+            "/games - Список игр\n"
+            "/mystreak - Ваши серии побед",
+            message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
+        )
+        return
+    
+    # Если пользователь заблокирован, показываем меню помощи с выбором причины
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(
-        InlineKeyboardButton('🚫 Я не согласен с блокировкой, рассмотрите эту заявку', 
-                           callback_data='help_send_request')
+        InlineKeyboardButton('🚫 Выбрать причину для обжалования', callback_data='help_select_reason')
     )
     
     await BOT.send_message(
         chat_id,
-        "🚫 <b>Если вас заблокировали и вы не согласны с этим</b>\n\n"
-        "Нажмите на кнопку ниже, чтобы отправить заявку администратору.\n"
-        "Ваша заявка будет рассмотрена в кратчайшие сроки.\n\n"
-        "<i>Эта кнопка доступна только заблокированным пользователям.</i>",
+        "🚫 <b>Вы заблокированы в этом чате</b>\n\n"
+        "Если вы не согласны с блокировкой, вы можете отправить заявку на рассмотрение администратору.\n\n"
+        "Нажмите на кнопку ниже, чтобы выбрать причину для обжалования блокировки.",
         reply_markup=keyboard,
         message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
     )
 
-# Обработчик кнопки помощи (заявка на рассмотрение)
-@DP.callback_query_handler(lambda c: c.data == 'help_send_request')
-async def help_send_request_callback(callback: types.CallbackQuery):
+# Выбор причины блокировки
+@DP.callback_query_handler(lambda c: c.data == 'help_select_reason')
+async def help_select_reason(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
     
     # Проверяем, заблокирован ли пользователь
     if not USERS.is_user_blocked(user_id, chat_id):
-        await callback.answer("❌ Эта кнопка доступна только заблокированных пользователям", show_alert=True)
+        await callback.answer("❌ Эта кнопка доступна только заблокированным пользователям", show_alert=True)
         return
     
+    # Предлагаем варианты причин
+    reasons = [
+        ("🚫 Блокировка по ошибке", "blocking_error"),
+        ("⏰ Слишком долгий срок блокировки", "too_long"),
+        ("📝 Хочу объяснить свою позицию", "explain_position"),
+        ("🔧 Техническая проблема", "technical_issue"),
+        ("✍️ Своя причина (ввести текст)", "custom_reason")
+    ]
+    
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    
+    for reason_text, reason_code in reasons:
+        keyboard.add(InlineKeyboardButton(reason_text, callback_data=f'help_reason_{reason_code}'))
+    
+    keyboard.add(InlineKeyboardButton('🔙 Отмена', callback_data='help_cancel'))
+    
+    await callback.message.edit_text(
+        "📝 <b>Выберите причину для обжалования блокировки:</b>\n\n"
+        "Администратор рассмотрит вашу заявку в кратчайшие сроки.",
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+# Обработка выбора причины
+@DP.callback_query_handler(lambda c: c.data.startswith('help_reason_'))
+async def help_process_reason(callback: types.CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+    
+    # Проверяем, заблокирован ли пользователь
+    if not USERS.is_user_blocked(user_id, chat_id):
+        await callback.answer("❌ Эта кнопка доступна только заблокированным пользователям", show_alert=True)
+        return
+    
+    reason_code = callback.data.replace('help_reason_', '')
+    
+    reason_texts = {
+        'blocking_error': "Блокировка по ошибке",
+        'too_long': "Слишком долгий срок блокировки",
+        'explain_position': "Хочу объяснить свою позицию",
+        'technical_issue': "Техническая проблема",
+        'custom_reason': "Своя причина"
+    }
+    
+    if reason_code == 'custom_reason':
+        # Просим пользователя ввести свою причину
+        await HelpStates.waiting_for_reason.set()
+        await state.update_data(chat_id=chat_id)
+        
+        await callback.message.edit_text(
+            "📝 <b>Введите свою причину для обжалования блокировки:</b>\n\n"
+            "Опишите подробно, почему вы считаете блокировку несправедливой.\n\n"
+            "❌ <i>Для отмены нажмите /cancel</i>"
+        )
+        await callback.answer()
+        return
+    
+    # Для готовых причин сразу отправляем заявку
+    reason = reason_texts.get(reason_code, "Не указана")
+    await send_help_request(callback, user_id, chat_id, reason)
+    await state.finish()
+
+# Обработка ввода своей причины
+@DP.message_handler(state=HelpStates.waiting_for_reason)
+async def process_custom_reason(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    data = await state.get_data()
+    chat_id = data.get('chat_id')
+    
+    # Проверяем команду отмены
+    if message.text and message.text.lower() == '/cancel':
+        await state.finish()
+        await message.answer("❌ Отправка заявки отменена.")
+        return
+    
+    reason = message.text[:500]  # Ограничиваем длину причины
+    
+    # Отправляем заявку
+    await send_help_request_direct(user_id, chat_id, reason)
+    
+    await state.finish()
+    await message.answer("✅ Ваша заявка отправлена администратору!")
+
+# Отмена ввода причины
+@DP.message_handler(commands=['cancel'], state=HelpStates.waiting_for_reason)
+async def cancel_custom_reason(message: types.Message, state: FSMContext):
+    await state.finish()
+    await message.answer("❌ Отправка заявки отменена.")
+
+# Функция отправки заявки
+async def send_help_request(callback: types.CallbackQuery, user_id: int, chat_id: int, reason: str):
     user_name = callback.from_user.full_name
     username = f"@{callback.from_user.username}" if callback.from_user.username else "нет username"
     
@@ -505,9 +613,19 @@ async def help_send_request_callback(callback: types.CallbackQuery):
     block_info = USERS.get_block_info(user_id, chat_id)
     block_reason = block_info['reason'] if block_info else "Нарушение правил"
     
+    # Формируем текст заявки
+    message_text = (
+        f"🚫 <b>Заявка на рассмотрение блокировки</b>\n"
+        f"👤 <b>Пользователь:</b> {user_name}\n"
+        f"📱 <b>Username:</b> {username}\n"
+        f"🆔 <b>ID:</b> {user_id}\n"
+        f"💬 <b>Причина блокировки:</b> {block_reason}\n"
+        f"📝 <b>Причина обжалования:</b> {reason}\n\n"
+        f"<i>Пользователь не согласен с блокировкой и просит рассмотреть заявку.</i>"
+    )
+    
     # Сохраняем заявку в базу данных
-    message_text = f"🚫 Заявка на рассмотрение блокировки\nПользователь: {user_name}\nUsername: {username}\nПричина блокировки: {block_reason}\n\nПользователь не согласен с блокировкой и просит рассмотреть заявку."
-    message_id = USERS.add_help_message(user_id, chat_id, message_text)
+    message_id = USERS.add_help_message(user_id, chat_id, message_text, reason)
     
     if message_id:
         await callback.answer("✅ Ваша заявка отправлена администратору!", show_alert=True)
@@ -517,18 +635,60 @@ async def help_send_request_callback(callback: types.CallbackQuery):
             try:
                 await BOT.send_message(
                     admin_id,
-                    f"🚨 <b>НОВАЯ ЗАЯВКА НА РАССМОТРЕНИЕ БЛОКИРОВКИ!</b>\n\n"
-                    f"👤 <b>Пользователь:</b> {user_name}\n"
-                    f"📱 <b>Username:</b> {username}\n"
-                    f"🆔 <b>ID:</b> {user_id}\n"
-                    f"💬 <b>Причина блокировки:</b> {block_reason}\n\n"
-                    f"⏰ <b>Время:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                    f"<i>Пользователь не согласен с блокировкой и просит рассмотреть заявку.</i>"
+                    message_text
                 )
             except Exception as e:
-                print(f"Ошибка при отправке уведомления админу {admin_id}: {e}")
+                logger.error(f"Ошибка при отправке уведомления админу {admin_id}: {e}")
     else:
         await callback.answer("❌ Ошибка при отправке заявки", show_alert=True)
+
+# Функция прямой отправки заявки
+async def send_help_request_direct(user_id: int, chat_id: int, reason: str):
+    user_name = "Пользователь"  # Будем получать из базы
+    username = "нет username"
+    
+    # Получаем информацию о пользователе
+    user_data = USERS.get('users', user_id)
+    if user_data:
+        user_name = user_data.get('name', user_name)
+    
+    # Получаем информацию о блокировке
+    block_info = USERS.get_block_info(user_id, chat_id)
+    block_reason = block_info['reason'] if block_info else "Нарушение правил"
+    
+    # Формируем текст заявки
+    message_text = (
+        f"🚫 <b>Заявка на рассмотрение блокировки</b>\n"
+        f"👤 <b>Пользователь:</b> {user_name}\n"
+        f"📱 <b>Username:</b> {username}\n"
+        f"🆔 <b>ID:</b> {user_id}\n"
+        f"💬 <b>Причина блокировки:</b> {block_reason}\n"
+        f"📝 <b>Причина обжалования:</b> {reason}\n\n"
+        f"<i>Пользователь не согласен с блокировкой и просит рассмотреть заявку.</i>"
+    )
+    
+    # Сохраняем заявку в базу данных
+    message_id = USERS.add_help_message(user_id, chat_id, message_text, reason)
+    
+    if message_id:
+        # Уведомляем всех админов
+        for admin_id in ADMIN_IDS:
+            try:
+                await BOT.send_message(
+                    admin_id,
+                    message_text
+                )
+            except Exception as e:
+                logger.error(f"Ошибка при отправке уведомления админу {admin_id}: {e}")
+
+# Отмена выбора причины
+@DP.callback_query_handler(lambda c: c.data == 'help_cancel')
+async def help_cancel(callback: types.CallbackQuery):
+    await callback.message.edit_text(
+        "❌ <b>Отправка заявки отменена</b>\n\n"
+        "Если вы передумали, всегда можете воспользоваться командой /help снова."
+    )
+    await callback.answer()
 
 # 🔥 ПРОСТАЯ АДМИН ПАНЕЛЬ (упрощенная)
 @DP.callback_query_handler(lambda c: c.data == 'admin')
@@ -552,9 +712,10 @@ async def admin_panel(callback: types.CallbackQuery):
         InlineKeyboardButton('✅ Разблокировать', callback_data='admin-unblock-user')
     )
     keyboard.add(
-        InlineKeyboardButton('♻️ Сбросить рейтинги', callback_data='admin-reset-all'),
-        InlineKeyboardButton('🔙 Назад', callback_data='back-to-main')
+        InlineKeyboardButton('📨 Заявки на разблокировку', callback_data='admin-help-requests'),
+        InlineKeyboardButton('♻️ Сбросить рейтинги', callback_data='admin-reset-all')
     )
+    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='back-to-main'))
 
     await callback.message.edit_text(
         f"⚙️ <b>Панель администратора</b>\n\n"
@@ -562,6 +723,201 @@ async def admin_panel(callback: types.CallbackQuery):
         reply_markup=keyboard
     )
     await callback.answer()
+
+# 🔥 ПРОСМОТР ЗАЯВОК НА РАЗБЛОКИРОВКУ
+@DP.callback_query_handler(lambda c: c.data == 'admin-help-requests')
+async def admin_help_requests(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    
+    # Проверка прав
+    try:
+        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
+        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
+            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
+            return
+    except:
+        if not USERS.is_admin(user_id):
+            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+            return
+    
+    # Получаем заявки
+    help_requests = USERS.get_pending_help_messages()
+    
+    if not help_requests:
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
+        
+        await callback.message.edit_text(
+            f"📭 <b>Нет ожидающих заявок на разблокировку</b>\n\n"
+            f"{get_new_year_greeting()} <i>Все спокойно!</i>",
+            reply_markup=keyboard
+        )
+        await callback.answer()
+        return
+    
+    # Показываем первую заявку
+    await show_help_request(callback, help_requests, 0)
+
+async def show_help_request(callback: types.CallbackQuery, requests: list, index: int):
+    if index < 0 or index >= len(requests):
+        return
+    
+    request = requests[index]
+    
+    # Получаем информацию о пользователе
+    user_data = USERS.get('users', request['user_id'])
+    user_name = user_data.get('name', 'Пользователь') if user_data else 'Пользователь'
+    
+    text = (
+        f"🚨 <b>ЗАЯВКА НА РАЗБЛОКИРОВКУ #{index + 1}</b>\n\n"
+        f"👤 <b>Пользователь:</b> {user_name}\n"
+        f"🆔 <b>ID:</b> {request['user_id']}\n"
+        f"📝 <b>Причина обжалования:</b> {request.get('reason', 'Не указана')}\n"
+        f"⏰ <b>Время заявки:</b> {request['timestamp']}\n\n"
+        f"{request['message_text']}\n\n"
+        f"<i>Заявка {index + 1} из {len(requests)}</i>"
+    )
+    
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    
+    # Кнопки навигации
+    nav_buttons = []
+    if index > 0:
+        nav_buttons.append(InlineKeyboardButton('◀️ Предыдущая', callback_data=f'admin_help_nav_{index-1}'))
+    if index < len(requests) - 1:
+        nav_buttons.append(InlineKeyboardButton('Следующая ▶️', callback_data=f'admin_help_nav_{index+1}'))
+    
+    if nav_buttons:
+        keyboard.row(*nav_buttons)
+    
+    # Кнопки действий
+    keyboard.row(
+        InlineKeyboardButton('✅ Разблокировать', callback_data=f'admin_help_approve_{request["message_id"]}_{request["user_id"]}_{request["chat_id"]}'),
+        InlineKeyboardButton('❌ Отклонить', callback_data=f'admin_help_reject_{request["message_id"]}')
+    )
+    keyboard.add(InlineKeyboardButton('🔙 Назад в админку', callback_data='admin'))
+    
+    await callback.message.edit_text(text, reply_markup=keyboard)
+    await callback.answer()
+
+# Навигация по заявкам
+@DP.callback_query_handler(lambda c: c.data.startswith('admin_help_nav_'))
+async def admin_help_navigate(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    
+    # Проверка прав
+    try:
+        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
+        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
+            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
+            return
+    except:
+        if not USERS.is_admin(user_id):
+            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+            return
+    
+    index = int(callback.data.split('_')[3])
+    help_requests = USERS.get_pending_help_messages()
+    
+    if not help_requests:
+        await callback.answer("❌ Больше нет заявок", show_alert=True)
+        return
+    
+    await show_help_request(callback, help_requests, index)
+
+# Одобрение заявки
+@DP.callback_query_handler(lambda c: c.data.startswith('admin_help_approve_'))
+async def admin_help_approve(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    
+    # Проверка прав
+    try:
+        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
+        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
+            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
+            return
+    except:
+        if not USERS.is_admin(user_id):
+            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+            return
+    
+    data_parts = callback.data.split('_')
+    message_id = int(data_parts[3])
+    target_user_id = int(data_parts[4])
+    chat_id = int(data_parts[5])
+    
+    # Разблокируем пользователя
+    success = USERS.unblock_user(target_user_id, chat_id)
+    
+    if success:
+        # Обновляем статус заявки
+        USERS.update_help_message_status(message_id, 'approved')
+        
+        # Уведомляем пользователя
+        try:
+            await BOT.send_message(
+                target_user_id,
+                f"✅ <b>Ваша заявка на разблокировку одобрена!</b>\n\n"
+                f"Администратор рассмотрел вашу заявку и снял блокировку.\n\n"
+                f"{get_new_year_greeting()} <i>Теперь вы можете снова использовать бота!</i>"
+            )
+        except:
+            pass
+        
+        await callback.answer("✅ Пользователь разблокирован!", show_alert=True)
+        
+        # Обновляем список заявок
+        help_requests = USERS.get_pending_help_messages()
+        if help_requests:
+            await show_help_request(callback, help_requests, 0)
+        else:
+            keyboard = InlineKeyboardMarkup()
+            keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
+            
+            await callback.message.edit_text(
+                f"✅ <b>Пользователь успешно разблокирован!</b>\n\n"
+                f"{get_new_year_greeting()} <i>Больше нет ожидающих заявок.</i>",
+                reply_markup=keyboard
+            )
+    else:
+        await callback.answer("❌ Ошибка при разблокировке", show_alert=True)
+
+# Отклонение заявки
+@DP.callback_query_handler(lambda c: c.data.startswith('admin_help_reject_'))
+async def admin_help_reject(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    
+    # Проверка прав
+    try:
+        chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
+        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
+            await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
+            return
+    except:
+        if not USERS.is_admin(user_id):
+            await callback.answer("❌ У вас нет прав администратора", show_alert=True)
+            return
+    
+    message_id = int(callback.data.split('_')[3])
+    
+    # Обновляем статус заявки
+    USERS.update_help_message_status(message_id, 'rejected')
+    
+    await callback.answer("❌ Заявка отклонена", show_alert=True)
+    
+    # Обновляем список заявок
+    help_requests = USERS.get_pending_help_messages()
+    if help_requests:
+        await show_help_request(callback, help_requests, 0)
+    else:
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
+        
+        await callback.message.edit_text(
+            f"❌ <b>Заявка отклонена</b>\n\n"
+            f"{get_new_year_greeting()} <i>Больше нет ожидающих заявок.</i>",
+            reply_markup=keyboard
+        )
 
 # Выбор пользователя для блокировки
 @DP.callback_query_handler(lambda c: c.data == 'admin-block-user')
@@ -713,7 +1069,6 @@ async def admin_unblock_user(callback: types.CallbackQuery):
     # Проверка прав
     try:
         chat_member = await BOT.get_chat_member(callback.message.chat.id, user_id)
-        if not (USERS.is_admin(user_id) and chat_member.status in ['administrator', 'creator']):
             await callback.answer("❌ У вас нет прав администратора в этом чате", show_alert=True)
             return
     except:
@@ -851,16 +1206,32 @@ async def admin_reset_all_ratings(callback: types.CallbackQuery):
     
     await callback.answer()
 
+# 🔥 ИСПРАВЛЕННЫЙ ОБРАБОТЧИК НАЗАД
 @DP.callback_query_handler(lambda c: c.data == 'back-to-main')
 async def back_to_main(callback: types.CallbackQuery):
-    message = types.Message(
-        message_id=callback.message.message_id,
-        date=callback.message.date,
-        chat=callback.message.chat,
-        from_user=callback.from_user,
-        text='/start'
-    )
-    await main_menu(message)
+    # Используем прямой вызов функции main_menu
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+    
+    # Создаем фейковое сообщение с правильной структурой
+    class FakeMessage:
+        def __init__(self, user_id, chat_id, user_full_name):
+            self.from_user = type('obj', (object,), {
+                'id': user_id,
+                'full_name': user_full_name,
+                'username': None
+            })()
+            self.chat = type('obj', (object,), {
+                'id': chat_id
+            })()
+            self.text = '/start'
+            self.message_thread_id = None
+    
+    user_full_name = callback.from_user.full_name
+    fake_message = FakeMessage(user_id, chat_id, user_full_name)
+    
+    await main_menu(fake_message)
+    await callback.answer()
 
 @DP.message_handler(commands=['congratulate'])
 async def congratulate(message: types.Message):
