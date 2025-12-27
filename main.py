@@ -728,6 +728,7 @@ async def admin_block_user(callback: types.CallbackQuery):
 
 # Выбор времени блокировки
 # В функции admin_block_select_time, заменить варианты блокировки:
+# Выбор времени блокировки
 @DP.callback_query_handler(lambda c: c.data.startswith('block_select_user-'))
 async def admin_block_select_time(callback: types.CallbackQuery):
     if not USERS.is_admin(callback.from_user.id):
@@ -744,10 +745,6 @@ async def admin_block_select_time(callback: types.CallbackQuery):
     )
     keyboard.add(
         InlineKeyboardButton('⏰ 1 час', callback_data=f'block_confirm-{target_user_id}-60'),
-        InlineKeyboardButton('⏰ 3 часа', callback_data=f'block_confirm-{target_user_id}-180')
-    )
-    keyboard.add(
-        InlineKeyboardButton('⏰ 6 часов', callback_data=f'block_confirm-{target_user_id}-360'),
         InlineKeyboardButton('⏰ 12 часов', callback_data=f'block_confirm-{target_user_id}-720')
     )
     keyboard.add(
@@ -758,13 +755,10 @@ async def admin_block_select_time(callback: types.CallbackQuery):
     
     await callback.message.edit_text(
         f"👤 <b>Пользователь:</b> {user_name}\n"
-        f"🕒 <b>Выберите длительность блокировки:</b>\n\n"
-        f"<i>Старые варианты (3 и 6 часов) заменены на 1, 12, 24 часа и 'Навсегда'</i>\n\n"
-        f"{get_new_year_greeting()} <i>Выбирайте мудро!</i>",
+        f"🕒 <b>Выберите длительность блокировки:</b>",
         reply_markup=keyboard
     )
     await callback.answer()
-
 # Подтверждение и выполнение блокировки
 @DP.callback_query_handler(lambda c: c.data.startswith('block_confirm-'))
 async def admin_block_confirm(callback: types.CallbackQuery):
@@ -1025,5 +1019,6 @@ if __name__ == '__main__':
     print("Для остановки нажми Ctrl+C")
     
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
+
 
 
