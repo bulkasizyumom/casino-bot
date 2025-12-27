@@ -202,6 +202,7 @@ DP.middleware.setup(UserRegistrationMiddleware())  # ВТОРОЙ - регист
 
 # main menu handler
 @DP.message_handler(commands=['casino', 'start'])
+# Используем правильную проверку админ-прав
 async def main_menu(message: types.Message):
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -215,9 +216,10 @@ async def main_menu(message: types.Message):
 
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
+    keyboard.add(InlineKeyboardButton('🎯 Соревнования', callback_data='competition_main'))
     
-    # Добавляем кнопку для админов (как в старой версии)
-    if USERS.is_admin(user_id):
+    # Исправленная проверка админ-прав - проверяем ID в списке
+    if user_id in ADMIN_IDS:
         keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
 
     await BOT.send_message(
@@ -296,7 +298,41 @@ async def competition_main(callback: types.CallbackQuery):
         reply_markup=keyboard
     )
     await callback.answer()
+# В функции main_menu уже добавлена кнопка выше
+# Теперь нужно добавить в info_command тоже:
 
+@DP.message_handler(commands=['info'])
+async def info_command(message: types.Message):
+    text = f"""🎄 <b>Я — Дилер. Хозяин "Подземелья", распорядитель истинных желаний.</b> 
+
+✨ Я — причина, по которой вашего времени становится меньше. Удача любит смелых, а я... их проигрыши.
+
+<b>ВАРИАНТЫ:</b>
+🎰 - собери три одинаковых знака, если хватит терпения;
+🎲 - шесть граней, шесть чисел, только 1 - победа;
+🎯 - дротиком в яблочко или на пол тряпочкой?
+🎳 - думаешь, легко получить страйк?
+⚽️ - горизонтальный баскетбол; 
+🏀 - вертикальный футбол;
+
+🎁 И не забывай: я помню ВСЁ. Каждые сутки, недели - ни одна попытка не скроется от моих глаз.
+
+🏅 <b>НОВОЕ: Соревнования!</b> Проверь свои очки по формуле из таблицы.
+
+{get_new_year_greeting()} <i>Счастливого Нового Года!</i>"""
+
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
+    keyboard.add(InlineKeyboardButton('🎯 Соревнования', callback_data='competition_main'))
+    
+    if message.from_user.id in ADMIN_IDS:
+        keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
+
+    await BOT.send_message(
+        message.chat.id, text,
+        message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None,
+        reply_markup=keyboard
+    )
 # Показ рейтинга соревнований
 @DP.callback_query_handler(lambda c: c.data == 'competition_rating')
 async def competition_rating(callback: types.CallbackQuery):
@@ -691,6 +727,7 @@ async def admin_block_user(callback: types.CallbackQuery):
     await callback.answer()
 
 # Выбор времени блокировки
+# В функции admin_block_select_time, заменить варианты блокировки:
 @DP.callback_query_handler(lambda c: c.data.startswith('block_select_user-'))
 async def admin_block_select_time(callback: types.CallbackQuery):
     if not USERS.is_admin(callback.from_user.id):
@@ -715,13 +752,14 @@ async def admin_block_select_time(callback: types.CallbackQuery):
     )
     keyboard.add(
         InlineKeyboardButton('⏰ 24 часа', callback_data=f'block_confirm-{target_user_id}-1440'),
-        InlineKeyboardButton('∞ Навсегда', callback_data=f'block_confirm-{target_user_id}-525600')  # 1 год ≈ навсегда
+        InlineKeyboardButton('🚫 Навсегда', callback_data=f'block_confirm-{target_user_id}-525600')
     )
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin-block-user'))
     
     await callback.message.edit_text(
         f"👤 <b>Пользователь:</b> {user_name}\n"
         f"🕒 <b>Выберите длительность блокировки:</b>\n\n"
+        f"<i>Старые варианты (3 и 6 часов) заменены на 1, 12, 24 часа и 'Навсегда'</i>\n\n"
         f"{get_new_year_greeting()} <i>Выбирайте мудро!</i>",
         reply_markup=keyboard
     )
@@ -987,4 +1025,5 @@ if __name__ == '__main__':
     print("Для остановки нажми Ctrl+C")
     
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
+
 
