@@ -514,6 +514,24 @@ class Users:
             print(f"Error getting weekly stats: {e}")
             return []
 
+    def cleanup_old_period_stats(self):
+        """Очищает старые периодические статистики"""
+        try:
+            # Удаляем дневные статистики старше 7 дней
+            week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+            self.cur.execute("DELETE FROM daily_stats WHERE date < ?", (week_ago,))
+            
+            # Удаляем недельные статистики старше 4 недель
+            month_ago = (datetime.now() - timedelta(days=28)).strftime("%Y-%m-%d")
+            self.cur.execute("DELETE FROM weekly_stats WHERE week_start < ?", (month_ago,))
+            
+            self.database.conn.commit()
+            logger.info(f"Очищены старые периодические статистики")
+            return True
+        except Exception as e:
+            print(f"Error cleaning up old period stats: {e}")
+            return False
+
     def get(self, table: str, id: int, chat_id: int = None):
         try:
             if chat_id is not None:
@@ -685,3 +703,103 @@ class Users:
             if "no such table" in str(e):
                 return []
             raise UserError(e)
+
+    # Новые методы для рейтингов
+    def get_competition_points(self, user_id: int, chat_id: int):
+        """Рассчитывает очки пользователя по формуле из Excel"""
+        try:
+            # Получаем общую статистику
+            tries_data = self.get('tries', user_id, chat_id)
+            wins_data = self.get('wins', user_id, chat_id)
+            jackpots_data = self.get('jackpots', user_id, chat_id)
+            
+            if not tries_data or not wins_data:
+                return 0
+            
+            # Для слотов
+            slots_tries = tries_data.get('slots', 0)
+            slots_wins = wins_data.get('slots', 0)
+            slots_jackpots = jackpots_data.get('slots', 0) if jackpots_data else 0
+            
+            # Другие игры
+            dice_tries = tries_data.get('dice', 0)
+            dice_wins = wins_data.get('dice', 0)
+            
+            dart_tries = tries_data.get('dart', 0)
+            dart_wins = wins_data.get('dart', 0)
+            
+            bowl_tries = tries_data.get('bowl', 0)
+            bowl_wins = wins_data.get('bowl', 0)
+            
+            foot_tries = tries_data.get('foot', 0)
+            foot_wins = wins_data.get('foot', 0)
+            
+            bask_tries = tries_data.get('bask', 0)
+            bask_wins = wins_data.get('bask', 0)
+            
+            # Рассчитываем винрейты
+            slots_winrate = slots_wins / slots_tries if slots_tries > 0 else 0
+            dice_winrate = dice_wins / dice_tries if dice_tries > 0 else 0
+            dart_winrate = dart_wins / dart_tries if dart_tries > 0 else 0
+            bowl_winrate = bowl_wins / bowl_tries if bowl_tries > 0 else 0
+            foot_winrate = foot_wins / foot_tries if foot_tries > 0 else 0
+            bask_winrate = bask_wins / bask_tries if bask_tries > 0 else 0
+            
+            # Формула из Excel: =100*(выигрыши - джекпоты) - (попытки - выигрыши)*5 + 10000*винрейт + очки_джекпота + бонус_места
+            # Очки джекпота = джекпоты * 777
+            # Бонус места = серия^3
+            
+            # Для слотов (с джекпотами)
+            slots_points = 100 * (slots_wins - slots_jackpots) - (slots_tries - slots_wins) * 5 + 10000 * slots_winrate + slots_jackpots * 777
+            
+            # Для других игр (без джекпотов)
+            dice_points = 100 * dice_wins - (dice_tries - dice_wins) * 5 + 10000 * dice_winrate
+            dart_points = 100 * dart_wins - (dart_tries - dart_wins) * 5 + 10000 * dart_winrate
+            bowl_points = 100 * bowl_wins - (bowl_tries - bowl_wins) * 5 + 10000 * bowl_winrate
+            foot_points = 100 * foot_wins - (foot_tries - foot_wins) * 5 + 10000 * foot_winrate
+            bask_points = 100 * bask_wins - (bask_tries - bask_wins) * 5 + 10000 * bask_winrate
+            
+            # Получаем серии побед для бонуса
+            max_streak = 0
+            for game in ['slots', 'dice', 'dart', 'bowl', 'foot', 'bask']:
+                streaks = self.get_win_streaks(chat_id, game)
+                for streak in streaks:
+                    if streak['id'] == user_id and streak['max_streak'] > max_streak:
+                        max_streak = streak['max_streak']
+            
+            # Бонус за серию (3^серия)
+            streak_bonus = 3 ** max_streak if max_streak > 0 else 0
+            
+            # Общая сумма очков
+            total_points = slots_points + dice_points + dart_points + bowl_points + foot_points + bask_points + streak_bonus
+            
+            return round(total_points)
+            
+        except Exception as e:
+            print(f"Error calculating competition points: {e}")
+            return 0
+
+    def get_competition_rating(self, chat_id: int):
+        """Получает рейтинг пользователей по очкам"""
+        try:
+            # Получаем всех пользователей в чате
+            all_users = []
+            tries_data = self.get_all('tries', chat_id)
+            
+            for tries in tries_data:
+                user_id = tries['id']
+                user_data = self.get('users', user_id)
+                if user_data:
+                    name = user_data.get('name', 'Unknown')
+                    points = self.get_competition_points(user_id, chat_id)
+                    all_users.append((user_id, name, points))
+            
+            # Сортируем по очкам (по убыванию)
+            all_users.sort(key=lambda x: x[2], reverse=True)
+            
+            return all_users
+            
+        except Exception as e:
+            print(f"Error getting competition rating: {e}")
+            return [])
+
