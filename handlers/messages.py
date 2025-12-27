@@ -10,6 +10,15 @@ from libraries.users import Users
 # Настраиваем логгер
 logger = logging.getLogger(__name__)
 
+# 🔥 НОВОГОДНЕЕ ОФОРМЛЕНИЕ
+NEW_YEAR_EMOJIS = ['🎄', '🎅', '🤶', '🦌', '🍾', '🎉', '✨', '❄️', '☃️', '🎁']
+
+def get_new_year_greeting():
+    """Возвращает новогоднее приветствие с эмодзи"""
+    import random
+    greeting_emojis = random.sample(NEW_YEAR_EMOJIS, min(3, len(NEW_YEAR_EMOJIS)))
+    return ' '.join(greeting_emojis)
+
 class MessagesHandler:
     def __init__(self, dp: Dispatcher, bot: Bot, games: dict, database: Users):
         self.register(dp, bot, games, database)
@@ -137,9 +146,10 @@ class MessagesHandler:
 
             async def congratulate():
                 await asyncio.sleep(1)
+                new_year_greeting = get_new_year_greeting()
                 await bot.send_message(
                     message.chat.id,
-                    f'🤑 <b>Выигрыш!</b> Поздравляем.',
+                    f'{new_year_greeting} 🤑 <b>Выигрыш!</b> Поздравляем.',
                     message_thread_id=message.message_thread_id
                 )
 
@@ -174,13 +184,12 @@ class MessagesHandler:
                 
                 if streak_message:
                     await asyncio.sleep(1.5)
+                    new_year_greeting = get_new_year_greeting()
                     await bot.send_message(
                         message.chat.id,
-                        f'{streak_message} <b>Серия побед!</b> {current_streak} подряд!',
+                        f'{new_year_greeting} {streak_message} <b>Серия побед!</b> {current_streak} подряд!',
                         message_thread_id=message.message_thread_id
                     )
-
-       
 
             # Обновляем периодическую статистику
             database.increment_period_stats(user, chat_id, game_name, tries, wins, jackpots)
@@ -227,4 +236,3 @@ class MessagesHandler:
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
             await process_dice(dice_message, emoji, dice_message.dice.value, user_id)
-
