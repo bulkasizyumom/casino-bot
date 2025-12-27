@@ -1,6 +1,9 @@
 import time
 import datetime
 from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 class UserError(Exception):
     pass
@@ -102,12 +105,13 @@ class Users:
                 PRIMARY KEY (id, chat_id)
             );
 
-            -- ТАБЛИЦА ДЛЯ СООБЩЕНИЙ ПОМОЩИ
+            -- ТАБЛИЦА ДЛЯ СООБЩЕНИЙ ПОМОЩИ С ПРИЧИНАМИ
             CREATE TABLE IF NOT EXISTS help_messages (
                 message_id INTEGER PRIMARY KEY,
                 user_id INTEGER,
                 chat_id INTEGER,
                 message_text TEXT,
+                reason TEXT,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 status TEXT DEFAULT 'pending'
             );
@@ -145,7 +149,7 @@ class Users:
             ''', (user_id, chat_id))
             return self.cur.fetchone() is not None
         except Exception as e:
-            print(f"Error checking user block: {e}")
+            logger.error(f"Error checking user block: {e}")
             return False
 
     def block_user(self, user_id: int, chat_id: int, reason: str, duration_minutes: int = 15):
@@ -163,7 +167,7 @@ class Users:
             self.database.conn.commit()
             return True
         except Exception as e:
-            print(f"Error blocking user: {e}")
+            logger.error(f"Error blocking user: {e}")
             return False
 
     def unblock_user(self, user_id: int, chat_id: int):
@@ -177,7 +181,7 @@ class Users:
             self.database.conn.commit()
             return True
         except Exception as e:
-            print(f"Error unblocking user: {e}")
+            logger.error(f"Error unblocking user: {e}")
             return False
 
     def get_block_info(self, user_id: int, chat_id: int):
@@ -198,7 +202,7 @@ class Users:
                 }
             return None
         except Exception as e:
-            print(f"Error getting block info: {e}")
+            logger.error(f"Error getting block info: {e}")
             return None
 
     def get_all_blocked_users(self, chat_id: int = None):
@@ -230,16 +234,16 @@ class Users:
                 })
             return results
         except Exception as e:
-            print(f"Error getting blocked users: {e}")
+            logger.error(f"Error getting blocked users: {e}")
             return []
 
-    def add_help_message(self, user_id: int, chat_id: int, message_text: str):
-        """Добавляет сообщение помощи от пользователя"""
+    def add_help_message(self, user_id: int, chat_id: int, message_text: str, reason: str = None):
+        """Добавляет сообщение помощи от пользователя с указанием причины"""
         try:
             self.cur.execute('''
-                INSERT INTO help_messages (user_id, chat_id, message_text)
-                VALUES (?, ?, ?)
-            ''', (user_id, chat_id, message_text))
+                INSERT INTO help_messages (user_id, chat_id, message_text, reason)
+                VALUES (?, ?, ?, ?)
+            ''', (user_id, chat_id, message_text, reason))
             
             self.database.conn.commit()
             
@@ -249,14 +253,14 @@ class Users:
             
             return message_id
         except Exception as e:
-            print(f"Error adding help message: {e}")
+            logger.error(f"Error adding help message: {e}")
             return None
 
     def get_pending_help_messages(self):
         """Получает все ожидающие сообщения помощи"""
         try:
             self.cur.execute('''
-                SELECT message_id, user_id, chat_id, message_text, timestamp 
+                SELECT message_id, user_id, chat_id, message_text, reason, timestamp 
                 FROM help_messages 
                 WHERE status = 'pending'
                 ORDER BY timestamp ASC
@@ -269,11 +273,12 @@ class Users:
                     'user_id': row[1],
                     'chat_id': row[2],
                     'message_text': row[3],
-                    'timestamp': row[4]
+                    'reason': row[4],
+                    'timestamp': row[5]
                 })
             return results
         except Exception as e:
-            print(f"Error getting help messages: {e}")
+            logger.error(f"Error getting help messages: {e}")
             return []
 
     def update_help_message_status(self, message_id: int, status: str):
@@ -288,7 +293,7 @@ class Users:
             self.database.conn.commit()
             return True
         except Exception as e:
-            print(f"Error updating help message status: {e}")
+            logger.error(f"Error updating help message status: {e}")
             return False
 
     def reset_user(self, id: int, chat_id: int):
@@ -328,7 +333,7 @@ class Users:
             self.database.conn.commit()
             return True
         except Exception as e:
-            print(f"Error resetting all stats: {e}")
+            logger.error(f"Error resetting all stats: {e}")
             return False
 
     def update_win_streak(self, user_id: int, chat_id: int, game_type: str, is_win: bool):
@@ -384,7 +389,7 @@ class Users:
             return current_streak, max_streak
             
         except Exception as e:
-            print(f"Error updating win streak: {e}")
+            logger.error(f"Error updating win streak: {e}")
             return 0, 0
 
     def get_win_streaks(self, chat_id: int, game_type: str = None):
@@ -414,7 +419,7 @@ class Users:
                 })
             return results
         except Exception as e:
-            print(f"Error getting win streaks: {e}")
+            logger.error(f"Error getting win streaks: {e}")
             return []
 
     def get_current_date(self):
@@ -459,7 +464,7 @@ class Users:
             self.database.conn.commit()
             return True
         except Exception as e:
-            print(f"Error updating period stats: {e}")
+            logger.error(f"Error updating period stats: {e}")
             return False
 
     def get_daily_stats(self, chat_id: int, date: str = None):
@@ -485,7 +490,7 @@ class Users:
                 })
             return results
         except Exception as e:
-            print(f"Error getting daily stats: {e}")
+            logger.error(f"Error getting daily stats: {e}")
             return []
 
     def get_weekly_stats(self, chat_id: int, week_start: str = None):
@@ -511,7 +516,7 @@ class Users:
                 })
             return results
         except Exception as e:
-            print(f"Error getting weekly stats: {e}")
+            logger.error(f"Error getting weekly stats: {e}")
             return []
 
     def cleanup_old_period_stats(self):
@@ -526,10 +531,10 @@ class Users:
             self.cur.execute("DELETE FROM weekly_stats WHERE week_start < ?", (month_ago,))
             
             self.database.conn.commit()
-            logger.info(f"Очищены старые периодические статистики")
+            logger.info("Очищены старые периодические статистики")
             return True
         except Exception as e:
-            print(f"Error cleaning up old period stats: {e}")
+            logger.error(f"Error cleaning up old period stats: {e}")
             return False
 
     def get(self, table: str, id: int, chat_id: int = None):
@@ -776,7 +781,7 @@ class Users:
             return round(total_points)
             
         except Exception as e:
-            print(f"Error calculating competition points: {e}")
+            logger.error(f"Error calculating competition points: {e}")
             return 0
 
     def get_competition_rating(self, chat_id: int):
@@ -800,6 +805,5 @@ class Users:
             return all_users
             
         except Exception as e:
-            print(f"Error getting competition rating: {e}")
-            return [])
-
+            logger.error(f"Error getting competition rating: {e}")
+            return []
