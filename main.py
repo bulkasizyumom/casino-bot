@@ -182,8 +182,20 @@ class BlockedUsersMiddleware(BaseMiddleware):
         user_id = callback_query.from_user.id
         chat_id = callback_query.message.chat.id
         
-        # Исключаем кнопки помощи из блокировки
-        if callback_query.data in ['help_send_request', 'help_select_reason', 'help_custom_reason']:
+        # 🔥 ИСКЛЮЧАЕМ ВСЕ КНОПКИ ПОМОЩИ ИЗ БЛОКИРОВКИ
+        help_callbacks = [
+            'help_select_reason',
+            'help_custom_reason',
+            'help_cancel',
+            'help_send_request'
+        ]
+        
+        # Добавляем все кнопки с причинами
+        for reason in ['blocking_error', 'too_long', 'explain_position', 'technical_issue', 'custom_reason']:
+            help_callbacks.append(f'help_reason_{reason}')
+        
+        # Если это кнопка помощи - пропускаем блокировку
+        if callback_query.data in help_callbacks or callback_query.data.startswith('help_reason_'):
             return
             
         if USERS.is_user_blocked(user_id, chat_id):
@@ -281,7 +293,7 @@ async def info_command(message: types.Message):
         reply_markup=keyboard
     )
 
-# 🔥 НОВЫЙ ХЕНДЛЕР ДЛЯ СОРЕВНОВАНИЙ
+
 # 🔥 НОВЫЙ ХЕНДЛЕР ДЛЯ СОРЕВНОВАНИЙ
 @DP.callback_query_handler(lambda c: c.data == 'competition_main')
 async def competition_main(callback: types.CallbackQuery):
@@ -477,10 +489,8 @@ async def help_select_reason(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
     
-    # Проверяем, заблокирован ли пользователь
-    if not USERS.is_user_blocked(user_id, chat_id):
-        await callback.answer("❌ Эта кнопка доступна только заблокированным пользователям", show_alert=True)
-        return
+    # 🔥 УБИРАЕМ проверку на блокировку - эта кнопка ДОЛЖНА быть доступна только заблокированным
+    # Вместо этого просто продолжаем обработку
     
     # Предлагаем варианты причин
     reasons = [
@@ -511,10 +521,7 @@ async def help_process_reason(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
     
-    # Проверяем, заблокирован ли пользователь
-    if not USERS.is_user_blocked(user_id, chat_id):
-        await callback.answer("❌ Эта кнопка доступна только заблокированным пользователям", show_alert=True)
-        return
+    # 🔥 УБИРАЕМ проверку на блокировку - эта кнопка ДОЛЖНА быть доступна только заблокированным
     
     reason_code = callback.data.replace('help_reason_', '')
     
@@ -543,7 +550,6 @@ async def help_process_reason(callback: types.CallbackQuery, state: FSMContext):
     reason = reason_texts.get(reason_code, "Не указана")
     await send_help_request(callback, user_id, chat_id, reason)
     await state.finish()
-
 # Обработка ввода своей причины
 @DP.message_handler(state=HelpStates.waiting_for_reason)
 async def process_custom_reason(message: types.Message, state: FSMContext):
@@ -671,8 +677,9 @@ async def admin_panel(callback: types.CallbackQuery):
     )
     keyboard.add(
         InlineKeyboardButton('♻️ Сбросить рейтинги', callback_data='admin-reset-all'),
-        InlineKeyboardButton('🔙 Назад', callback_data='back-to-main')
+        InlineKeyboardButton('🏆 Сбросить соревнования', callback_data='admin-reset-competition')
     )
+    keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='back-to-main'))
 
     await callback.message.edit_text(
         f"⚙️ <b>Панель администратора</b>\n\n"
@@ -703,8 +710,7 @@ async def admin_block_user(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-# Выбор времени блокировки
-# В функции admin_block_select_time, заменить варианты блокировки:
+
 # Выбор времени блокировки
 @DP.callback_query_handler(lambda c: c.data.startswith('block_select_user-'))
 async def admin_block_select_time(callback: types.CallbackQuery):
@@ -883,27 +889,28 @@ async def admin_unblock_execute(callback: types.CallbackQuery):
     
     await callback.answer()
 
-@DP.callback_query_handler(lambda c: c.data == 'admin-reset-all')
-async def admin_reset_all_ratings(callback: types.CallbackQuery):
+@DP.callback_query_handler(lambda c: c.data == 'admin-reset-competition')
+async def admin_reset_competition(callback: types.CallbackQuery):
     if not USERS.is_admin(callback.from_user.id):
         await callback.answer("❌ У вас нет прав администратора", show_alert=True)
         return
 
-    success = USERS.reset_all_stats()
+    # Сбрасываем только статистику соревнований
+    success = USERS.reset_competition_stats()
 
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
     
     if success:
         await callback.message.edit_text(
-            f"✅ <b>Все рейтинги и серии успешно сброшены!</b>\n\n"
-            f"Вся статистика обнулена. Теперь можно начинать новую статистику с чистого листа.\n\n"
-            f"{get_new_year_greeting()} <i>Новое начало!</i>",
+            f"✅ <b>Статистика соревнований успешно сброшена!</b>\n\n"
+            f"Все очки и рейтинги для соревнований обнулены. Теперь можно начать новый турнир.\n\n"
+            f"{get_new_year_greeting()} <i>Новое соревнование!</i>",
             reply_markup=keyboard
         )
     else:
         await callback.message.edit_text(
-            f"❌ <b>Ошибка при сбросе рейтингов</b>\n\n"
+            f"❌ <b>Ошибка при сбросе статистики соревнований</b>\n\n"
             f"Попробуйте позже или проверьте логи.\n\n"
             f"{get_new_year_greeting()}",
             reply_markup=keyboard
@@ -996,6 +1003,7 @@ if __name__ == '__main__':
     print("Для остановки нажми Ctrl+C")
     
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
+
 
 
 
