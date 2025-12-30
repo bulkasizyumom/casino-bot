@@ -500,16 +500,13 @@ async def help_select_reason(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
     
-    # 🔥 УБИРАЕМ проверку на блокировку - эта кнопка ДОЛЖНА быть доступна только заблокированным
-    # Вместо этого просто продолжаем обработку
-    
-    # Предлагаем варианты причин
+    # 🔥 УБИРАЕМ кнопку "Своя причина" - оставляем только готовые варианты
     reasons = [
         ("🚫 Блокировка по ошибке", "blocking_error"),
         ("⏰ Слишком долгий срок блокировки", "too_long"),
         ("📝 Хочу объяснить свою позицию", "explain_position"),
         ("🔧 Техническая проблема", "technical_issue"),
-        ("✍️ Своя причина (ввести текст)", "custom_reason")
+        # 🔥 УБРАНО: ("✍️ Своя причина (ввести текст)", "custom_reason")
     ]
     
     keyboard = InlineKeyboardMarkup(row_width=1)
@@ -525,7 +522,8 @@ async def help_select_reason(callback: types.CallbackQuery):
         reply_markup=keyboard
     )
     await callback.answer()
-
+    
+# Обработка выбора причины
 # Обработка выбора причины
 @DP.callback_query_handler(lambda c: c.data.startswith('help_reason_'))
 async def help_process_reason(callback: types.CallbackQuery, state: FSMContext):
@@ -539,43 +537,16 @@ async def help_process_reason(callback: types.CallbackQuery, state: FSMContext):
         'too_long': "Слишком долгий срок блокировки",
         'explain_position': "Хочу объяснить свою позицию",
         'technical_issue': "Техническая проблема",
-        'custom_reason': "Своя причина"
+        # 🔥 'custom_reason' больше не используется
     }
     
-    if reason_code == 'custom_reason':
-        # 🔥 ИСПРАВЛЕНИЕ: не используем состояние, а добавляем в ожидание
-        # Получаем экземпляр MessagesHandler
-        from handlers.messages import messages_handler
-        
-        # Добавляем пользователя в список ожидающих ввод причины
-        messages_handler.add_waiting_for_reason(user_id, chat_id)
-        
-        await callback.message.edit_text(
-            "📝 <b>Теперь введите свою причину прямо здесь:</b>\n\n"
-            "Ваше следующее сообщение будет отправлено администратору.\n"
-            "Опишите подробно, почему вы считаете блокировку несправедливой.\n\n"
-            "⏱️ <i>У вас есть 60 секунд на отправку причины</i>"
-        )
-        
-        # Устанавливаем таймер для сброса ожидания
-        await callback.answer("⚠️ У вас есть 60 секунд на отправку причины")
-        
-        async def reset_waiting():
-            await asyncio.sleep(60)
-            if messages_handler.is_waiting_for_reason(user_id, chat_id):
-                messages_handler.remove_waiting_for_reason(user_id, chat_id)
-                try:
-                    await callback.message.reply("⏰ Время на отправку причины истекло.")
-                except:
-                    pass
-        
-        asyncio.create_task(reset_waiting())
-        return
+    # 🔥 УБРАНА обработка custom_reason
     
     # Для готовых причин сразу отправляем заявку
     reason = reason_texts.get(reason_code, "Не указана")
     await send_help_request(callback, user_id, chat_id, reason)
     await state.finish()
+    
 # Обработка ввода своей причины
 @DP.message_handler(state=HelpStates.waiting_for_reason)
 async def process_custom_reason(message: types.Message, state: FSMContext):
@@ -1030,4 +1001,5 @@ if __name__ == '__main__':
     print("Для остановки нажми Ctrl+C")
     
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
+
 
