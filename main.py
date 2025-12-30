@@ -71,10 +71,6 @@ def get_new_year_greeting():
     greeting_emojis = [emoji_list[i % len(emoji_list)] for i in range(3)]
     return f"{' '.join(greeting_emojis)}"
 
-# 🔥 СОСТОЯНИЯ ДЛЯ ВЫБОРА ПРИЧИНЫ
-class HelpStates(StatesGroup):
-    waiting_for_reason = State()
-
 # 🔥 ФУНКЦИЯ ДЛЯ ОБНОВЛЕНИЯ ПЕРИОДИЧЕСКОЙ СТАТИСТИКИ
 def check_and_reset_periodic_stats():
     """Проверяет и обновляет периодическую статистику при смене дня/недели"""
@@ -187,13 +183,12 @@ class BlockedUsersMiddleware(BaseMiddleware):
         # 🔥 ИСКЛЮЧАЕМ ВСЕ КНОПКИ ПОМОЩИ ИЗ БЛОКИРОВКИ
         help_callbacks = [
             'help_select_reason',
-            'help_custom_reason',
             'help_cancel',
             'help_send_request'
         ]
         
         # Добавляем все кнопки с причинами
-        for reason in ['blocking_error', 'too_long', 'explain_position', 'technical_issue', 'custom_reason']:
+        for reason in ['blocking_error', 'too_long', 'explain_position', 'technical_issue']:
             help_callbacks.append(f'help_reason_{reason}')
         
         # Если это кнопка помощи - пропускаем блокировку
@@ -324,41 +319,7 @@ async def competition_main(callback: types.CallbackQuery):
         reply_markup=keyboard
     )
     await callback.answer()
-# В функции main_menu уже добавлена кнопка выше
-# Теперь нужно добавить в info_command тоже:
 
-@DP.message_handler(commands=['info'])
-async def info_command(message: types.Message):
-    text = f"""🎄 <b>Я — Дилер. Хозяин "Подземелья", распорядитель истинных желаний.</b> 
-
-✨ Я — причина, по которой вашего времени становится меньше. Удача любит смелых, а я... их проигрыши.
-
-<b>ВАРИАНТЫ:</b>
-🎰 - собери три одинаковых знака, если хватит терпения;
-🎲 - шесть граней, шесть чисел, только 1 - победа;
-🎯 - дротиком в яблочко или на пол тряпочкой?
-🎳 - думаешь, легко получить страйк?
-⚽️ - горизонтальный баскетбол; 
-🏀 - вертикальный футбол;
-
-🎁 И не забывай: я помню ВСЁ. Каждые сутки, недели - ни одна попытка не скроется от моих глаз.
-
-🏅 <b>НОВОЕ: Соревнования!</b> Проверь свои очки по формуле из таблицы.
-
-{get_new_year_greeting()} <i>Счастливого Нового Года!</i>"""
-
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
-    keyboard.add(InlineKeyboardButton('🎯 Соревнования', callback_data='competition_main'))
-    
-    if message.from_user.id in ADMIN_IDS:
-        keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
-
-    await BOT.send_message(
-        message.chat.id, text,
-        message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None,
-        reply_markup=keyboard
-    )
 # Показ рейтинга соревнований
 @DP.callback_query_handler(lambda c: c.data == 'competition_rating')
 async def competition_rating(callback: types.CallbackQuery):
@@ -398,16 +359,15 @@ async def competition_rating(callback: types.CallbackQuery):
             
             # 🔥 ИСПРАВЛЕНИЕ: УБИРАЕМ смайлик подарочной коробки 🎁
             # Просто оставляем имя без эмодзи
-            name_without_emoji = name
-            
-            text += f"<b>{i}.</b> {medal}{name_without_emoji} - <b>{points}</b> очков\n"
+            text += f"<b>{i}.</b> {medal}{name} - <b>{points}</b> очков\n"
         
         if len(rating_data) > 10:
             text += f"\n<i>Всего участников: {len(rating_data)}</i>"
+        
+        text += f"\n\n{get_new_year_greeting()} <i>Удачи в соревнованиях!</i>"
     
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='competition_main'))
-    # Убрана кнопка "📊 Формула подсчета"
     
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
@@ -453,7 +413,6 @@ async def competition_my_points(callback: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🏅 Общий рейтинг', callback_data='competition_rating'))
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='competition_main'))
-    # Убрана кнопка "📊 Формула подсчета"
     
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
@@ -500,13 +459,12 @@ async def help_select_reason(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
     
-    # 🔥 УБИРАЕМ кнопку "Своя причина" - оставляем только готовые варианты
+    # 🔥 Только готовые варианты (без "своей причины")
     reasons = [
         ("🚫 Блокировка по ошибке", "blocking_error"),
         ("⏰ Слишком долгий срок блокировки", "too_long"),
         ("📝 Хочу объяснить свою позицию", "explain_position"),
-        ("🔧 Техническая проблема", "technical_issue"),
-        # 🔥 УБРАНО: ("✍️ Своя причина (ввести текст)", "custom_reason")
+        ("🔧 Техническая проблема", "technical_issue")
     ]
     
     keyboard = InlineKeyboardMarkup(row_width=1)
@@ -522,8 +480,7 @@ async def help_select_reason(callback: types.CallbackQuery):
         reply_markup=keyboard
     )
     await callback.answer()
-    
-# Обработка выбора причины
+
 # Обработка выбора причины
 @DP.callback_query_handler(lambda c: c.data.startswith('help_reason_'))
 async def help_process_reason(callback: types.CallbackQuery, state: FSMContext):
@@ -536,43 +493,13 @@ async def help_process_reason(callback: types.CallbackQuery, state: FSMContext):
         'blocking_error': "Блокировка по ошибке",
         'too_long': "Слишком долгий срок блокировки",
         'explain_position': "Хочу объяснить свою позицию",
-        'technical_issue': "Техническая проблема",
-        # 🔥 'custom_reason' больше не используется
+        'technical_issue': "Техническая проблема"
     }
     
-    # 🔥 УБРАНА обработка custom_reason
-    
-    # Для готовых причин сразу отправляем заявку
+    # Только готовые причины - сразу отправляем заявку
     reason = reason_texts.get(reason_code, "Не указана")
     await send_help_request(callback, user_id, chat_id, reason)
     await state.finish()
-    
-# Обработка ввода своей причины
-@DP.message_handler(state=HelpStates.waiting_for_reason)
-async def process_custom_reason(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    data = await state.get_data()
-    chat_id = data.get('chat_id')
-    
-    # Проверяем команду отмены
-    if message.text and message.text.lower() == '/cancel':
-        await state.finish()
-        await message.answer("❌ Отправка заявки отменена.")
-        return
-    
-    reason = message.text[:500]  # Ограничиваем длину причины
-    
-    # Отправляем заявку
-    await send_help_request_direct(user_id, chat_id, reason)
-    
-    await state.finish()
-    await message.answer("✅ Ваша заявка отправлена администратору!")
-
-# Отмена ввода причины
-@DP.message_handler(commands=['cancel'], state=HelpStates.waiting_for_reason)
-async def cancel_custom_reason(message: types.Message, state: FSMContext):
-    await state.finish()
-    await message.answer("❌ Отправка заявки отменена.")
 
 # Функция отправки заявки
 async def send_help_request(callback: types.CallbackQuery, user_id: int, chat_id: int, reason: str):
@@ -611,45 +538,6 @@ async def send_help_request(callback: types.CallbackQuery, user_id: int, chat_id
                 logger.error(f"Ошибка при отправке уведомления админу {admin_id}: {e}")
     else:
         await callback.answer("❌ Ошибка при отправке заявки", show_alert=True)
-
-# Функция прямой отправки заявки
-async def send_help_request_direct(user_id: int, chat_id: int, reason: str):
-    user_name = "Пользователь"  # Будем получать из базы
-    username = "нет username"
-    
-    # Получаем информацию о пользователе
-    user_data = USERS.get('users', user_id)
-    if user_data:
-        user_name = user_data.get('name', user_name)
-    
-    # Получаем информацию о блокировке
-    block_info = USERS.get_block_info(user_id, chat_id)
-    block_reason = block_info['reason'] if block_info else "Нарушение правил"
-    
-    # Формируем текст заявки
-    message_text = (
-        f"🚫 <b>Заявка на рассмотрение блокировки</b>\n"
-        f"👤 <b>Пользователь:</b> {user_name}\n"
-        f"📱 <b>Username:</b> {username}\n"
-        f"🆔 <b>ID:</b> {user_id}\n"
-        f"💬 <b>Причина блокировки:</b> {block_reason}\n"
-        f"📝 <b>Причина обжалования:</b> {reason}\n\n"
-        f"<i>Пользователь не согласен с блокировкой и просит рассмотреть заявку.</i>"
-    )
-    
-    # Сохраняем заявку в базу данных
-    message_id = USERS.add_help_message(user_id, chat_id, message_text, reason)
-    
-    if message_id:
-        # Уведомляем всех админов
-        for admin_id in ADMIN_IDS:
-            try:
-                await BOT.send_message(
-                    admin_id,
-                    message_text
-                )
-            except Exception as e:
-                logger.error(f"Ошибка при отправке уведомления админу {admin_id}: {e}")
 
 # Отмена выбора причины
 @DP.callback_query_handler(lambda c: c.data == 'help_cancel')
@@ -739,6 +627,7 @@ async def admin_block_select_time(callback: types.CallbackQuery):
         reply_markup=keyboard
     )
     await callback.answer()
+
 # Подтверждение и выполнение блокировки
 @DP.callback_query_handler(lambda c: c.data.startswith('block_confirm-'))
 async def admin_block_confirm(callback: types.CallbackQuery):
@@ -1001,5 +890,4 @@ if __name__ == '__main__':
     print("Для остановки нажми Ctrl+C")
     
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
-
 
