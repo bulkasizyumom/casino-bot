@@ -16,6 +16,7 @@ class MessagesHandler:
         self.last_dice_time = {}  # Словарь для хранения времени последнего депа по пользователям
         self.special_user_losing_streaks = {}  # Счетчик проигрышных депов для специального пользователя
         self.waiting_for_reason = {}  # 🔥 НОВОЕ: словарь для отслеживания пользователей, вводящих причину
+        self.fast_dice_ignored = {}  # 🔥 НОВОЕ: словарь для отслеживания проигнорированных быстрых депов
 
     # 🔥 НОВЫЙ МЕТОД ДЛЯ ОБРАБОТКИ ПРИЧИНЫ БЛОКИРОВКИ
     def add_waiting_for_reason(self, user_id: int, chat_id: int):
@@ -27,6 +28,22 @@ class MessagesHandler:
     
     def is_waiting_for_reason(self, user_id: int, chat_id: int):
         return (user_id, chat_id) in self.waiting_for_reason
+    
+    def mark_fast_dice_ignored(self, user_id: int, chat_id: int):
+        """Помечает, что быстрый деп был проигнорирован"""
+        key = f"{user_id}_{chat_id}"
+        self.fast_dice_ignored[key] = True
+    
+    def is_fast_dice_ignored(self, user_id: int, chat_id: int):
+        """Проверяет, был ли проигнорирован быстрый деп"""
+        key = f"{user_id}_{chat_id}"
+        return key in self.fast_dice_ignored
+    
+    def clear_fast_dice_flag(self, user_id: int, chat_id: int):
+        """Очищает флаг игнорирования быстрого депа"""
+        key = f"{user_id}_{chat_id}"
+        if key in self.fast_dice_ignored:
+            del self.fast_dice_ignored[key]
 
     def register(self, dp, bot, games: dict, database: Users):
         # 🔥 СПЕЦИАЛЬНЫЙ ПОЛЬЗОВАТЕЛЬ
@@ -77,12 +94,13 @@ class MessagesHandler:
             if user_key in self.last_dice_time:
                 time_diff = current_time - self.last_dice_time[user_key]
                 if time_diff < 0.3:  # Меньше 0.3 секунды
-                    logger.warning(f"⚡ СПАМ ДЕП: UserID={user_id}, TimeDiff={time_diff:.3f}s")
-                    try:
-                        await message.delete()
-                    except:
-                        pass
-                    return  # Игнорируем слишком быстрые депы
+                    logger.warning(f"⚡ ИГНОРИРУЕМ СПАМ ДЕП: UserID={user_id}, TimeDiff={time_diff:.3f}s")
+                    # 🔥 ИСПРАВЛЕНИЕ: не удаляем сообщение, только помечаем для игнорирования
+                    self.mark_fast_dice_ignored(user_id, chat_id)
+                    return  # Игнорируем слишком быстрые депы в статистике
+            
+            # 🔥 Если предыдущий деп был проигнорирован, очищаем флаг
+            self.clear_fast_dice_flag(user_id, chat_id)
             
             self.last_dice_time[user_key] = current_time
             
@@ -196,6 +214,12 @@ class MessagesHandler:
                 return
 
         async def process_dice(message: types.Message, emoji: str, value: int, user: int):
+            # 🔥 ПРОВЕРЯЕМ, БЫЛ ЛИ ЭТОТ ДЕП ПРОИГНОРИРОВАН КАК СЛИШКОМ БЫСТРЫЙ
+            if self.is_fast_dice_ignored(user, message.chat.id):
+                logger.info(f"⚡ Пропускаем статистику для быстрого депа UserID={user}")
+                self.clear_fast_dice_flag(user, message.chat.id)
+                return  # 🔥 ВОТ ЗДЕСЬ: не обновляем статистику, но сообщение остается
+            
             # 🔥 РЕГИСТРИРУЕМ ПОЛЬЗОВАТЕЛЬ ЕСЛИ ЕГО НЕТ
             if not database.get('users', user):
                 database.add(user, message.from_user.full_name)
@@ -273,6 +297,19 @@ class MessagesHandler:
             user_id = message.from_user.id
             chat_id = message.chat.id
             
+            # 🔥 ПРОВЕРКА НА БЫСТРЫЕ КОМАНДЫ (аналогично депам)
+            current_time = time.time()
+            user_key = f"{user_id}_{chat_id}_command"
+            
+            if user_key in self.last_dice_time:
+                time_diff = current_time - self.last_dice_time[user_key]
+                if time_diff < 0.3:  # Меньше 0.3 секунды
+                    logger.warning(f"⚡ ИГНОРИРУЕМ СПАМ КОМАНДУ: UserID={user_id}, TimeDiff={time_diff:.3f}s")
+                    await message.reply("⏰ Слишком быстро! Подождите немного...", delete_after=3)
+                    return
+            
+            self.last_dice_time[user_key] = current_time
+            
             # Проверяем ручную блокировку
             if database.is_user_blocked(user_id, chat_id):
                 block_info = database.get_block_info(user_id, chat_id)
@@ -295,8 +332,6 @@ class MessagesHandler:
                         pass
                 return
 
-            # Убрали проверку анти-спам защиты для команд
-            
             command = message.text.lstrip('/')
             emoji = next((k for k, v in games.items() if v['name'] == command), None)
 
