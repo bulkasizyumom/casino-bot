@@ -396,13 +396,11 @@ async def competition_rating(callback: types.CallbackQuery):
             elif i == 3:
                 medal = "🥉 "
             
-            # Новогодняя тематика для первых трех мест
-            if i <= 3:
-                name_with_emoji = f"🎁 {name}"
-            else:
-                name_with_emoji = name
+            # 🔥 ИСПРАВЛЕНИЕ: УБИРАЕМ смайлик подарочной коробки 🎁
+            # Просто оставляем имя без эмодзи
+            name_without_emoji = name
             
-            text += f"<b>{i}.</b> {medal}{name_with_emoji} - <b>{points}</b> очков\n"
+            text += f"<b>{i}.</b> {medal}{name_without_emoji} - <b>{points}</b> очков\n"
         
         if len(rating_data) > 10:
             text += f"\n<i>Всего участников: {len(rating_data)}</i>"
@@ -1032,3 +1030,4 @@ if __name__ == '__main__':
     print("Для остановки нажми Ctrl+C")
     
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
+
