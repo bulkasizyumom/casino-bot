@@ -25,6 +25,8 @@ from handlers.messages import MessagesHandler
 from handlers.rating import RatingHandler
 from libraries.users import Users
 from database.database import Database
+messages_handler = None 
+rating_handler = None
 
 # 🔒 БЕЗОПАСНОЕ ПОЛУЧЕНИЕ ТОКЕНА
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
@@ -214,24 +216,27 @@ DP.middleware.setup(UserRegistrationMiddleware())  # ВТОРОЙ - регист
 
 # main menu handler
 @DP.message_handler(commands=['casino', 'start'])
-# Используем правильную проверку админ-прав
 async def main_menu(message: types.Message):
     user_id = message.from_user.id
     chat_id = message.chat.id
+    
+    # 🔥 ИСПРАВЛЕНИЕ: Проверяем из базы данных, а не только по списку ADMIN_IDS
+    is_admin_user = USERS.is_admin(user_id) or user_id in ADMIN_IDS
     
     logger.info(
         f"🏠 КОМАНДА: "
         f"UserID={user_id}, "
         f"Name={message.from_user.full_name}, "
-        f"Command={message.text}"
+        f"Command={message.text}, "
+        f"IsAdmin={is_admin_user}"
     )
 
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
     keyboard.add(InlineKeyboardButton('🎯 Соревнования', callback_data='competition_main'))
     
-    # Исправленная проверка админ-прав - проверяем ID в списке
-    if user_id in ADMIN_IDS:
+    # 🔥 ИСПРАВЛЕНИЕ: Используем проверку из базы данных
+    if is_admin_user:
         keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
 
     await BOT.send_message(
@@ -265,6 +270,10 @@ async def games(message: types.Message):
 # info command
 @DP.message_handler(commands=['info'])
 async def info_command(message: types.Message):
+    user_id = message.from_user.id
+    # 🔥 ИСПРАВЛЕНИЕ: Проверяем из базы данных
+    is_admin_user = USERS.is_admin(user_id) or user_id in ADMIN_IDS
+    
     text = f"""🎄 <b>Я — Дилер. Хозяин "Подземелья", распорядитель истинных желаний.</b> 
 
 ✨ Я — причина, по которой вашего времени становится меньше. Удача любит смелых, а я... их проигрыши.
@@ -279,12 +288,16 @@ async def info_command(message: types.Message):
 
 🎁 И не забывай: я помню ВСЁ. Каждые сутки, недели - ни одна попытка не скроется от моих глаз.
 
+🏅 <b>НОВОЕ: Соревнования!</b> Проверь свои очки по формуле из таблицы.
+
 {get_new_year_greeting()} <i>Счастливого Нового Года!</i>"""
 
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
+    keyboard.add(InlineKeyboardButton('🎯 Соревнования', callback_data='competition_main'))
     
-    if USERS.is_admin(message.from_user.id):
+    # 🔥 ИСПРАВЛЕНИЕ: Используем проверку из базы данных
+    if is_admin_user:
         keyboard.add(InlineKeyboardButton('⚙️ Админ', callback_data='admin'))
 
     await BOT.send_message(
@@ -521,8 +534,6 @@ async def help_process_reason(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
     
-    # 🔥 УБИРАЕМ проверку на блокировку - эта кнопка ДОЛЖНА быть доступна только заблокированным
-    
     reason_code = callback.data.replace('help_reason_', '')
     
     reason_texts = {
@@ -534,16 +545,33 @@ async def help_process_reason(callback: types.CallbackQuery, state: FSMContext):
     }
     
     if reason_code == 'custom_reason':
-        # Просим пользователя ввести свою причину
-        await HelpStates.waiting_for_reason.set()
-        await state.update_data(chat_id=chat_id)
+        # 🔥 ИСПРАВЛЕНИЕ: не используем состояние, а добавляем в ожидание
+        # Получаем экземпляр MessagesHandler
+        from handlers.messages import messages_handler
+        
+        # Добавляем пользователя в список ожидающих ввод причины
+        messages_handler.add_waiting_for_reason(user_id, chat_id)
         
         await callback.message.edit_text(
-            "📝 <b>Введите свою причину для обжалования блокировки:</b>\n\n"
+            "📝 <b>Теперь введите свою причину прямо здесь:</b>\n\n"
+            "Ваше следующее сообщение будет отправлено администратору.\n"
             "Опишите подробно, почему вы считаете блокировку несправедливой.\n\n"
-            "❌ <i>Для отмены нажмите /cancel</i>"
+            "⏱️ <i>У вас есть 60 секунд на отправку причины</i>"
         )
-        await callback.answer()
+        
+        # Устанавливаем таймер для сброса ожидания
+        await callback.answer("⚠️ У вас есть 60 секунд на отправку причины")
+        
+        async def reset_waiting():
+            await asyncio.sleep(60)
+            if messages_handler.is_waiting_for_reason(user_id, chat_id):
+                messages_handler.remove_waiting_for_reason(user_id, chat_id)
+                try:
+                    await callback.message.reply("⏰ Время на отправку причины истекло.")
+                except:
+                    pass
+        
+        asyncio.create_task(reset_waiting())
         return
     
     # Для готовых причин сразу отправляем заявку
@@ -996,15 +1024,11 @@ async def my_streak(message: types.Message):
     )
 
 if __name__ == '__main__':
-    MessagesHandler(DP, BOT, GAMES, USERS)
-    RatingHandler(DP, BOT, USERS)
-
+    # Инициализируем обработчики
+    messages_handler = MessagesHandler(DP, BOT, GAMES, USERS)
+    rating_handler = RatingHandler(DP, BOT, USERS)
+    
     print(f"{get_new_year_greeting()} 🤖 Бот запущен и работает...")
     print("Для остановки нажми Ctrl+C")
     
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
-
-
-
-
-
