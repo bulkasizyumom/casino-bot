@@ -341,7 +341,7 @@ class Users:
         try:
             self.cur.execute("UPDATE win_streaks SET current_streak = 0")
             self.database.conn.commit()
-            logger.info("Сброшены daily серии побед")
+            # Убираем лог - он будет в main.py при сбросе
             return True
         except Exception as e:
             logger.error(f"Error resetting daily streaks: {e}")
@@ -352,7 +352,7 @@ class Users:
         try:
             self.cur.execute("UPDATE win_streaks SET max_streak = 0")
             self.database.conn.commit()
-            logger.info("Сброшены weekly серии побед")
+            # Убираем лог - он будет в main.py при сбросе
             return True
         except Exception as e:
             logger.error(f"Error resetting weekly streaks: {e}")
@@ -533,7 +533,7 @@ class Users:
             self.cur.execute("DELETE FROM weekly_stats WHERE week_start < ?", (month_ago,))
             
             self.database.conn.commit()
-            logger.info("Очищены старые периодические статистики")
+            # Убираем лог - он будет в main.py при сбросе
             return True
         except Exception as e:
             logger.error(f"Error cleaning up old period stats: {e}")
@@ -785,6 +785,7 @@ class Users:
         except Exception as e:
             logger.error(f"Error resetting competition stats: {e}")
             return False
+            
     def get_competition_rating(self, chat_id: int):
         """Получает рейтинг пользователей по очкам"""
         try:
@@ -808,9 +809,3 @@ class Users:
         except Exception as e:
             logger.error(f"Error getting competition rating: {e}")
             return []
-
-
-
-
-
-
