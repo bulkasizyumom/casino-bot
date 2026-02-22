@@ -53,7 +53,7 @@ GAMES = {
     '🎲': {'name': 'dice',  'win': [1]},
 }
 
-# 🔥 НОВОГОДНЕЕ ОФОРМЛЕНИЕ (убрали Деда Мороза и Снегурочку)
+# 🔥 НОВОГОДНЕЕ ОФОРМЛЕНИЕ
 NEW_YEAR_EMOJIS = {
     '🎄': 'новогодняя елка',
     '☃️': 'снеговик',
@@ -80,22 +80,29 @@ def check_and_reset_periodic_stats():
         current_time = current_datetime.strftime("%H:%M")
         current_weekday = current_datetime.weekday()  # 0 - понедельник, 6 - воскресенье
         
-        logger.info(f"Проверка периодической статистики. Дата: {current_date}, Время: {current_time}")
+        # Логируем только при реальных сбросах статистики, а не каждую минуту
+        stats_reset = False
         
         # Проверяем, если сейчас 00:00 - сбрасываем дневную статистику
         if current_time == "00:00":
             logger.info("🎊 Полночь! Сбрасываем дневную статистику")
-            # Сбрасываем current_streak для всех пользователей в win_streaks
             USERS.reset_daily_streaks()
+            stats_reset = True
         
         # Проверяем, если сейчас понедельник 00:00 - сбрасываем недельную статистику
         if current_time == "00:00" and current_weekday == 0:
             logger.info("🎊 Понедельник! Сбрасываем недельную статистику")
-            # Сбрасываем max_streak для всех пользователей в win_streaks
             USERS.reset_weekly_streaks()
+            stats_reset = True
         
-        # Очищаем старые статистики
-        USERS.cleanup_old_period_stats()
+        # Очищаем старые статистики раз в день (только в полночь)
+        if current_time == "00:00":
+            USERS.cleanup_old_period_stats()
+            stats_reset = True
+        
+        # Логируем только если произошли изменения
+        if stats_reset:
+            logger.info(f"Периодическая статистика обновлена. Дата: {current_date}")
         
     except Exception as e:
         logger.error(f"Ошибка при проверке периодической статистики: {e}")
@@ -890,4 +897,3 @@ if __name__ == '__main__':
     print("Для остановки нажми Ctrl+C")
     
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
-
