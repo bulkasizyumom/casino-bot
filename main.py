@@ -53,23 +53,10 @@ GAMES = {
     '🎲': {'name': 'dice',  'win': [1]},
 }
 
-# 🔥 НОВОГОДНЕЕ ОФОРМЛЕНИЕ
-NEW_YEAR_EMOJIS = {
-    '🎄': 'новогодняя елка',
-    '☃️': 'снеговик',
-    '❄️': 'снежинка',
-    '✨': 'праздничные огоньки',
-    '🎁': 'подарок',
-    '🍾': 'шампанское',
-    '🎉': 'праздничные конфетти',
-    '🦌': 'олень',
-}
-
-def get_new_year_greeting():
-    """Возвращает новогоднее приветствие с эмодзи"""
-    emoji_list = list(NEW_YEAR_EMOJIS.keys())
-    greeting_emojis = [emoji_list[i % len(emoji_list)] for i in range(3)]
-    return f"{' '.join(greeting_emojis)}"
+# 🔥 УБРАНА НОВОГОДНЯЯ ТЕМАТИКА
+def get_greeting():
+    """Возвращает приветствие"""
+    return "🎲"
 
 # 🔥 ФУНКЦИЯ ДЛЯ ОБНОВЛЕНИЯ ПЕРИОДИЧЕСКОЙ СТАТИСТИКИ
 def check_and_reset_periodic_stats():
@@ -85,13 +72,13 @@ def check_and_reset_periodic_stats():
         
         # Проверяем, если сейчас 00:00 - сбрасываем дневную статистику
         if current_time == "00:00":
-            logger.info("🎊 Полночь! Сбрасываем дневную статистику")
+            logger.info("🌙 Полночь! Сбрасываем дневную статистику")
             USERS.reset_daily_streaks()
             stats_reset = True
         
         # Проверяем, если сейчас понедельник 00:00 - сбрасываем недельную статистику
         if current_time == "00:00" and current_weekday == 0:
-            logger.info("🎊 Понедельник! Сбрасываем недельную статистику")
+            logger.info("📅 Понедельник! Сбрасываем недельную статистику")
             USERS.reset_weekly_streaks()
             stats_reset = True
         
@@ -135,7 +122,7 @@ KNOWN_USERS = {
     751379478: "Степа",
     1995856157: "Санек",
     5928889926: "Катя",
-    5579075857: "Катерина"
+    5579075857: "Катя Арланова"
 }
 
 # 🔥 НОВЫЙ МИДЛВАРЬ ДЛЯ РУЧНОЙ БЛОКИРОВКИ ПОЛЬЗОВАТЕЛЕЙ
@@ -244,7 +231,7 @@ async def main_menu(message: types.Message):
 
     await BOT.send_message(
         chat_id,
-        f"""{get_new_year_greeting()} <b>Здравствуйте, {f"@{message.from_user.username}" if message.from_user.username else message.from_user.full_name}!</b>
+        f"""<b>Здравствуйте, {f"@{message.from_user.username}" if message.from_user.username else message.from_user.full_name}!</b>
 
 Добро пожаловать в казино-бот! Используйте кнопки ниже для навигации.
 
@@ -263,7 +250,7 @@ async def games(message: types.Message):
 🏀 <b>Баскетбол:</b> /bask
 🎯 <b>Дартс:</b> /dart
 
-{get_new_year_greeting()} <i>Желаем удачи в играх!</i>"""
+<i>Желаем удачи в играх!</i>"""
 
     await BOT.send_message(
         message.chat.id, text,
@@ -277,7 +264,7 @@ async def info_command(message: types.Message):
     # 🔥 ИСПРАВЛЕНИЕ: Проверяем из базы данных
     is_admin_user = USERS.is_admin(user_id) or user_id in ADMIN_IDS
     
-    text = f"""🎄 <b>Я — Дилер. Хозяин "Подземелья", распорядитель истинных желаний.</b> 
+    text = f"""🎲 <b>Я — Дилер. Хозяин "Подземелья", распорядитель истинных желаний.</b> 
 
 ✨ Я — причина, по которой вашего времени становится меньше. Удача любит смелых, а я... их проигрыши.
 
@@ -291,9 +278,7 @@ async def info_command(message: types.Message):
 
 🎁 И не забывай: я помню ВСЁ. Каждые сутки, недели - ни одна попытка не скроется от моих глаз.
 
-🏅 <b>НОВОЕ: Соревнования!</b> Проверь свои очки по формуле из таблицы.
-
-{get_new_year_greeting()} <i>Счастливого Нового Года!</i>"""
+🏅 <b>НОВОЕ: Соревнования!</b> Проверь свои очки по формуле из таблицы."""
 
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🏆 Рейтинги', callback_data='rating_main'))
@@ -322,8 +307,7 @@ async def competition_main(callback: types.CallbackQuery):
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='back-to-main'))
 
     await callback.message.edit_text(
-        f"🎯 <b>Соревнования</b>\n\n"
-        f"{get_new_year_greeting()} <i>Новогодний турнир!</i>",
+        f"🎯 <b>Соревнования</b>",
         reply_markup=keyboard
     )
     await callback.answer()
@@ -340,7 +324,7 @@ async def competition_rating(callback: types.CallbackQuery):
     if not rating_data:
         text = "📊 <i>Пока нет статистики для соревнований.</i>\n\nСыграйте в игры, чтобы набрать очки!"
     else:
-        text = f"🏅 <b>НОВОГОДНИЙ РЕЙТИНГ УЧАСТНИКОВ</b>\n\n"
+        text = f"🏅 <b>РЕЙТИНГ УЧАСТНИКОВ</b>\n\n"
         
         # Находим место текущего пользователя
         user_place = "–"
@@ -365,14 +349,12 @@ async def competition_rating(callback: types.CallbackQuery):
             elif i == 3:
                 medal = "🥉 "
             
-            # 🔥 ИСПРАВЛЕНИЕ: УБИРАЕМ смайлик подарочной коробки 🎁
-            # Просто оставляем имя без эмодзи
             text += f"<b>{i}.</b> {medal}{name} - <b>{points}</b> очков\n"
         
         if len(rating_data) > 10:
             text += f"\n<i>Всего участников: {len(rating_data)}</i>"
         
-        text += f"\n\n{get_new_year_greeting()} <i>Удачи в соревнованиях!</i>"
+        text += f"\n\n<i>Удачи в соревнованиях!</i>"
     
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='competition_main'))
@@ -416,7 +398,7 @@ async def competition_my_points(callback: types.CallbackQuery):
                 winrate = (wins / tries) * 100
                 text += f"{game_name}: {tries} попыток, {wins} побед ({winrate:.1f}%)\n"
     
-    text += f"\n{get_new_year_greeting()} <i>Удачи в соревнованиях!</i>"
+    text += f"\n<i>Удачи в соревнованиях!</i>"
     
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton('🏅 Общий рейтинг', callback_data='competition_rating'))
@@ -576,7 +558,7 @@ async def admin_panel(callback: types.CallbackQuery):
 
     await callback.message.edit_text(
         f"⚙️ <b>Панель администратора</b>\n\n"
-        f"{get_new_year_greeting()} <i>Выберите действие:</i>",
+        f"<i>Выберите действие:</i>",
         reply_markup=keyboard
     )
     await callback.answer()
@@ -597,8 +579,7 @@ async def admin_block_user(callback: types.CallbackQuery):
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
     
     await callback.message.edit_text(
-        f"👥 <b>Выберите пользователя для блокировки:</b>\n\n"
-        f"{get_new_year_greeting()} <i>Осторожно с волшебством!</i>",
+        f"👥 <b>Выберите пользователя для блокировки:</b>",
         reply_markup=keyboard
     )
     await callback.answer()
@@ -666,8 +647,7 @@ async def admin_block_confirm(callback: types.CallbackQuery):
         await callback.message.edit_text(
             f"✅ <b>Пользователь заблокирован!</b>\n\n"
             f"👤 <b>Имя:</b> {user_name}\n"
-            f"⏳ <b>Длительность:</b> {duration_text}\n\n"
-            f"{get_new_year_greeting()}",
+            f"⏳ <b>Длительность:</b> {duration_text}",
             reply_markup=keyboard
         )
         
@@ -684,7 +664,7 @@ async def admin_block_confirm(callback: types.CallbackQuery):
                 target_user_id,
                 f"🚫 <b>Вы были заблокированы в казино-боте!</b>\n\n"
                 f"⏳ <b>Длительность:</b> {duration_message}\n\n"
-                f"{get_new_year_greeting()} <i>Если вы считаете, что блокировка несправедлива, "
+                f"<i>Если вы считаете, что блокировка несправедлива, "
                 f"используйте команду /help в чате, чтобы написать администратору.</i>"
             )
         except:
@@ -708,8 +688,7 @@ async def admin_unblock_user(callback: types.CallbackQuery):
         keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
         
         await callback.message.edit_text(
-            f"📭 <b>В этом чате нет заблокированных пользователей</b>\n\n"
-            f"{get_new_year_greeting()} <i>Все хорошо!</i>",
+            f"📭 <b>В этом чате нет заблокированных пользователей</b>",
             reply_markup=keyboard
         )
         await callback.answer()
@@ -729,8 +708,7 @@ async def admin_unblock_user(callback: types.CallbackQuery):
     keyboard.add(InlineKeyboardButton('🔙 Назад', callback_data='admin'))
     
     await callback.message.edit_text(
-        f"✅ <b>Выберите пользователя для разблокировки:</b>\n\n"
-        f"{get_new_year_greeting()} <i>Дарите свободу!</i>",
+        f"✅ <b>Выберите пользователя для разблокировки:</b>",
         reply_markup=keyboard
     )
     await callback.answer()
@@ -765,8 +743,7 @@ async def admin_unblock_execute(callback: types.CallbackQuery):
     if success:
         await callback.message.edit_text(
             f"✅ <b>Пользователь разблокирован!</b>\n\n"
-            f"👤 <b>Имя:</b> {user_name}\n\n"
-            f"{get_new_year_greeting()} <i>Свобода подарена!</i>",
+            f"👤 <b>Имя:</b> {user_name}",
             reply_markup=keyboard
         )
         
@@ -775,8 +752,7 @@ async def admin_unblock_execute(callback: types.CallbackQuery):
             await BOT.send_message(
                 target_user_id,
                 f"✅ <b>Вы были разблокированы!</b>\n\n"
-                f"Администратор снял с вас блокировку. Теперь вы можете снова использовать бота.\n\n"
-                f"{get_new_year_greeting()} <i>Счастливого Нового Года!</i>"
+                f"Администратор снял с вас блокировку. Теперь вы можете снова использовать бота."
             )
         except:
             pass
@@ -798,15 +774,13 @@ async def admin_reset_competition(callback: types.CallbackQuery):
     if success:
         await callback.message.edit_text(
             f"✅ <b>Статистика соревнований успешно сброшена!</b>\n\n"
-            f"Все очки и рейтинги для соревнований обнулены. Теперь можно начать новый турнир.\n\n"
-            f"{get_new_year_greeting()} <i>Новое соревнование!</i>",
+            f"Все очки и рейтинги для соревнований обнулены. Теперь можно начать новый турнир.",
             reply_markup=keyboard
         )
     else:
         await callback.message.edit_text(
             f"❌ <b>Ошибка при сбросе статистики соревнований</b>\n\n"
-            f"Попробуйте позже или проверьте логи.\n\n"
-            f"{get_new_year_greeting()}",
+            f"Попробуйте позже или проверьте логи.",
             reply_markup=keyboard
         )
     
@@ -847,8 +821,7 @@ async def congratulate(message: types.Message):
 
         await BOT.send_message(
             message.chat.id,
-            f'✅ <b>Настройка сохранена</b>\n<i>Переключено на <b>{"ДА" if not user["congratulate"] else "НЕТ"}</b></i>\n\n'
-            f'{get_new_year_greeting()}',
+            f'✅ <b>Настройка сохранена</b>\n<i>Переключено на <b>{"ДА" if not user["congratulate"] else "НЕТ"}</b></i>',
             message_thread_id=message.message_thread_id if hasattr(message, 'message_thread_id') else None
         )
 
@@ -858,7 +831,7 @@ async def my_streak(message: types.Message):
     user_id = message.from_user.id
     chat_id = message.chat.id
     
-    text_lines = [f"{get_new_year_greeting()} <b>Ваши текущие серии побед:</b>\n"]
+    text_lines = [f"<b>Ваши текущие серии побед:</b>\n"]
     
     games_list = ['slots', 'dice', 'foot', 'bowl', 'bask', 'dart']
     has_streaks = False
@@ -881,7 +854,7 @@ async def my_streak(message: types.Message):
     if not has_streaks:
         text_lines.append("\n📊 <i>У вас пока нет серий побед</i>")
     
-    text_lines.append(f"\n{get_new_year_greeting()} <i>Удачи в установлении новых рекордов!</i>")
+    text_lines.append(f"\n<i>Удачи в установлении новых рекордов!</i>")
     
     await BOT.send_message(
         message.chat.id,
@@ -894,8 +867,7 @@ if __name__ == '__main__':
     messages_handler = MessagesHandler(DP, BOT, GAMES, USERS)
     rating_handler = RatingHandler(DP, BOT, USERS)
     
-    print(f"{get_new_year_greeting()} 🤖 Бот запущен и работает...")
+    print("🤖 Бот запущен и работает...")
     print("Для остановки нажми Ctrl+C")
     
     executor.start_polling(DP, skip_updates=False, allowed_updates=["message", "callback_query"])
-
