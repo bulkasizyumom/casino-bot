@@ -93,7 +93,7 @@ class MessagesHandler:
             
             if user_key in self.last_dice_time:
                 time_diff = current_time - self.last_dice_time[user_key]
-                if time_diff < 0.3:  # Меньше 0.3 секунды
+                if time_diff < 0.2:  
                     logger.warning(f"⚡ ИГНОРИРУЕМ СПАМ ДЕП: UserID={user_id}, TimeDiff={time_diff:.3f}s")
                     # 🔥 ИСПРАВЛЕНИЕ: не удаляем сообщение, только помечаем для игнорирования
                     self.mark_fast_dice_ignored(user_id, chat_id)
@@ -341,4 +341,5 @@ class MessagesHandler:
 
             dice_message = await bot.send_dice(message.chat.id, emoji=emoji, message_thread_id=message.message_thread_id)
             await process_dice(dice_message, emoji, dice_message.dice.value, user_id)
+
 
